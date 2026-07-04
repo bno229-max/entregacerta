@@ -84,6 +84,8 @@ p.auth-sub{color:var(--text-dim); font-size:13.5px; margin-bottom:24px; line-hei
 .field input, .field select, .field textarea{width:100%; padding:11px 13px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text); font-size:14px; outline:none; transition:border-color .15s;}
 .field input:focus, .field select:focus, .field textarea:focus{border-color:var(--primary); background:#fff;}
 .field-row{display:flex; gap:10px;}
+.nota-row{display:flex; gap:10px; align-items:flex-start;}
+.nota-row .btn-remove-nota{margin-top:26px; flex-shrink:0; color:var(--danger);}
 .field-row .field{flex:1;}
 .btn{border:none; border-radius:var(--radius-sm); padding:11px 18px; font-weight:600; font-size:13.5px; display:inline-flex; align-items:center; justify-content:center; gap:8px; transition:all .15s;}
 .btn-primary{background:var(--primary); color:#fff;}
@@ -593,10 +595,11 @@ p.auth-sub{color:var(--text-dim); font-size:13.5px; margin-bottom:24px; line-hei
 <div class="modal-backdrop" id="modal-entrega">
   <div class="modal">
     <div class="modal-header"><h3 id="modal-entrega-title">Nova entrega</h3><button class="modal-close" data-close="modal-entrega"><i class="fa-solid fa-xmark"></i></button></div>
-    <div class="field-row">
-      <div class="field"><label>Número da Nota Fiscal</label><input type="text" id="ent-nf" placeholder="Ex: 123456"></div>
-      <div class="field"><label>Série</label><input type="text" id="ent-serie" placeholder="Ex: 1"></div>
-    </div>
+
+    <label style="display:block; font-size:12px; font-weight:600; color:var(--text-dim); margin-bottom:7px;">Notas fiscais desta entrega</label>
+    <div id="notas-fiscais-list"></div>
+    <button class="btn btn-ghost btn-sm" id="btn-add-nota" type="button" style="margin-bottom:16px;"><i class="fa-solid fa-plus"></i> Adicionar outra nota</button>
+
     <div class="field"><label>Cliente</label><select id="ent-cliente"></select></div>
     <div class="field"><label>Motorista responsável</label><select id="ent-motorista"></select></div>
     <div class="field-row">
@@ -837,7 +840,13 @@ auth.onAuthStateChanged(async (user)=>{
   currentUser = user;
   try{
     const doc = await db.collection('usuarios').doc(user.uid).get();
-    if(!doc.exists){ toast('Perfil não encontrado.', 'err'); await auth.signOut(); return; }
+    if(!doc.exists){
+      const errBox = document.getElementById('auth-error');
+      errBox.textContent = 'Este acesso não foi encontrado ou foi desativado.';
+      errBox.style.display='block';
+      await auth.signOut();
+      return;
+    }
     currentProfile = { id: doc.id, ...doc.data() };
     document.getElementById('auth-screen').style.display='none';
     routeByRole();
@@ -916,10 +925,20 @@ function renderAllAdminViews(){
 
 function attachRealtimeListeners(){
   if(DEMO_MODE){ refreshDemoCaches(); return; }
-  db.collection('entregas').orderBy('dataAgendada','desc').onSnapshot(snap=>{
+
+  // Para motoristas, a regra de segurança exige que a própria consulta já venha filtrada
+  // por motoristaId (não dá pra buscar a coleção inteira e filtrar só no cliente).
+  const ehMotorista = currentProfile && currentProfile.role === 'motorista';
+  const entregasQuery = ehMotorista
+    ? db.collection('entregas').where('motoristaId', '==', currentUser.uid)
+    : db.collection('entregas').orderBy('dataAgendada', 'desc');
+
+  entregasQuery.onSnapshot(snap=>{
     entregasCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    entregasCache.sort((a,b)=> (b.dataAgendada?.toDate()?.getTime()||0) - (a.dataAgendada?.toDate()?.getTime()||0));
     renderAllAdminViews(); renderMobileHome();
-  }, err=>console.error(err));
+  }, err=>{ console.error(err); toast('Erro ao carregar entregas: '+err.message, 'err'); });
+
   db.collection('motoristas').orderBy('nome').onSnapshot(snap=>{
     motoristasCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
     renderMotoristas(); populateSelects();
@@ -992,46 +1011,85 @@ document.getElementById('btn-limpar-filtros-entrega').addEventListener('click', 
 document.getElementById('btn-nova-entrega').addEventListener('click', ()=>{
   editandoEntregaId = null;
   document.getElementById('modal-entrega-title').textContent='Nova entrega';
-  ['ent-nf','ent-serie','ent-obs'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('ent-obs').value = '';
   document.getElementById('ent-data').value = new Date().toISOString().slice(0,10);
   document.getElementById('ent-status').value='aguardando';
+  document.getElementById('notas-fiscais-list').innerHTML = '';
+  adicionarLinhaNota();
   openModal('modal-entrega');
 });
+
+function adicionarLinhaNota(){
+  const wrap = document.createElement('div');
+  wrap.className = 'nota-row';
+  wrap.innerHTML = `
+    <div class="field"><label>Número da Nota Fiscal</label><input type="text" class="nf-numero" placeholder="Ex: 123456"></div>
+    <div class="field"><label>Série</label><input type="text" class="nf-serie" placeholder="Ex: 1"></div>
+    <button class="btn btn-ghost btn-sm btn-remove-nota" type="button" title="Remover esta nota"><i class="fa-solid fa-trash"></i></button>
+  `;
+  wrap.querySelector('.btn-remove-nota').addEventListener('click', ()=>{
+    const list = document.getElementById('notas-fiscais-list');
+    if(list.children.length > 1) wrap.remove();
+    else { wrap.querySelector('.nf-numero').value=''; wrap.querySelector('.nf-serie').value=''; }
+  });
+  document.getElementById('notas-fiscais-list').appendChild(wrap);
+}
+document.getElementById('btn-add-nota').addEventListener('click', adicionarLinhaNota);
+
 document.getElementById('btn-salvar-entrega').addEventListener('click', async ()=>{
-  const nf = document.getElementById('ent-nf').value.trim();
-  const serie = document.getElementById('ent-serie').value.trim();
+  const notas = Array.from(document.querySelectorAll('#notas-fiscais-list .nota-row')).map(row=>({
+    nf: row.querySelector('.nf-numero').value.trim(),
+    serie: row.querySelector('.nf-serie').value.trim()
+  })).filter(n=>n.nf);
+
   const clienteId = document.getElementById('ent-cliente').value;
   const motoristaId = document.getElementById('ent-motorista').value;
   const data = document.getElementById('ent-data').value;
   const status = document.getElementById('ent-status').value;
   const obs = document.getElementById('ent-obs').value.trim();
-  if(!nf || !clienteId || !motoristaId){ toast('Preencha nota fiscal, cliente e motorista.', 'err'); return; }
+  if(!notas.length){ toast('Informe ao menos uma nota fiscal.', 'err'); return; }
+  if(!clienteId || !motoristaId){ toast('Selecione cliente e motorista.', 'err'); return; }
   const cliente = clientesCache.find(c=>c.id===clienteId);
   const motorista = motoristasCache.find(m=>m.id===motoristaId);
 
-  const payload = {
-    notaFiscal:nf, serie:serie||'1', clienteId, clienteNome:cliente?.nome, clienteEndereco:cliente?.endereco, clienteCidade:cliente?.cidade, clienteTelefone:cliente?.telefone,
-    motoristaId, motoristaNome:motorista?.nome, status, observacoes:obs||''
-  };
+  const btn = document.getElementById('btn-salvar-entrega');
+  btn.disabled = true; btn.textContent = notas.length>1 ? `Salvando ${notas.length} notas...` : 'Salvando...';
+
   try{
     if(DEMO_MODE){
-      payload.dataAgendada = fakeTs(data ? new Date(data) : new Date());
-      payload.id = 'en'+(demoIdSeq++);
-      payload.timeline = [{status:'aguardando', data: fakeTs(new Date())}];
-      demoDB.entregas.unshift(payload);
+      notas.forEach(n=>{
+        const payload = {
+          notaFiscal:n.nf, serie:n.serie||'1', clienteId, clienteNome:cliente?.nome, clienteEndereco:cliente?.endereco, clienteCidade:cliente?.cidade, clienteTelefone:cliente?.telefone,
+          motoristaId, motoristaNome:motorista?.nome, status, observacoes:obs||'',
+          dataAgendada: fakeTs(data ? new Date(data) : new Date()),
+          id: 'en'+(demoIdSeq++),
+          timeline: [{status:'aguardando', data: fakeTs(new Date())}]
+        };
+        demoDB.entregas.unshift(payload);
+      });
       refreshDemoCaches();
-      addLog(`Nova entrega NF ${nf} cadastrada para ${motorista?.nome}.`);
-      toast('Entrega cadastrada! (demo)', 'ok');
+      addLog(`${notas.length} nota(s) fiscal(is) cadastrada(s) para ${motorista?.nome}.`);
+      toast(`${notas.length} entrega(s) cadastrada(s)! (demo)`, 'ok');
       closeModal('modal-entrega');
       return;
     }
-    payload.dataAgendada = firebase.firestore.FieldValue.serverTimestamp();
-    payload.timeline = [{status:'aguardando', data: new Date()}];
-    await db.collection('entregas').add(payload);
-    addLog(`Nova entrega NF ${nf} cadastrada para ${motorista?.nome}.`);
-    toast('Entrega cadastrada!', 'ok');
+
+    const batch = db.batch();
+    notas.forEach(n=>{
+      const ref = db.collection('entregas').doc();
+      batch.set(ref, {
+        notaFiscal:n.nf, serie:n.serie||'1', clienteId, clienteNome:cliente?.nome, clienteEndereco:cliente?.endereco, clienteCidade:cliente?.cidade, clienteTelefone:cliente?.telefone,
+        motoristaId, motoristaNome:motorista?.nome, status, observacoes:obs||'',
+        dataAgendada: data ? firebase.firestore.Timestamp.fromDate(new Date(data)) : firebase.firestore.FieldValue.serverTimestamp(),
+        timeline: [{status:'aguardando', data: new Date()}]
+      });
+    });
+    await batch.commit();
+    addLog(`${notas.length} nota(s) fiscal(is) cadastrada(s) para ${motorista?.nome}.`);
+    toast(`${notas.length} entrega(s) cadastrada(s)!`, 'ok');
     closeModal('modal-entrega');
   }catch(e){ toast('Erro: '+e.message, 'err'); }
+  finally{ btn.disabled=false; btn.textContent='Salvar entrega'; }
 });
 
 document.getElementById('input-planilha-entregas').addEventListener('change', async (e)=>{
@@ -1179,9 +1237,16 @@ function renderMotoristas(){
       b.addEventListener('click', async ()=>{
         if(b.dataset.act==='edit') abrirEdicaoMotorista(m.id);
         else{
-          if(confirm('Remover este motorista?')){
+          if(confirm(`Remover ${m.nome}? O acesso dele ao app será desativado imediatamente.`)){
             if(DEMO_MODE){ demoDB.motoristas = demoDB.motoristas.filter(x=>x.id!==m.id); refreshDemoCaches(); toast('Motorista removido. (demo)','ok'); }
-            else{ await db.collection('motoristas').doc(m.id).delete(); toast('Motorista removido.','ok'); }
+            else{
+              try{
+                // remove o cadastro E o perfil de login (o mesmo ID/uid) — assim o acesso é revogado de fato
+                await db.collection('motoristas').doc(m.id).delete();
+                await db.collection('usuarios').doc(m.id).delete().catch(()=>{});
+                toast('Motorista removido. O acesso dele foi desativado.','ok');
+              }catch(e){ toast('Erro ao remover: '+e.message, 'err'); }
+            }
           }
         }
       });

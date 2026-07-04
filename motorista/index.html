@@ -843,7 +843,13 @@ auth.onAuthStateChanged(async (user)=>{
   currentUser = user;
   try{
     const doc = await db.collection('usuarios').doc(user.uid).get();
-    if(!doc.exists){ toast('Perfil não encontrado.', 'err'); await auth.signOut(); return; }
+    if(!doc.exists){
+      const errBox = document.getElementById('auth-error');
+      errBox.textContent = 'Este acesso foi desativado pelo administrador. Fale com o responsável pela logística.';
+      errBox.style.display='block';
+      await auth.signOut();
+      return;
+    }
     currentProfile = { id: doc.id, ...doc.data() };
     document.getElementById('auth-screen').style.display='none';
     routeByRole();
@@ -924,10 +930,20 @@ function renderAllAdminViews(){
 
 function attachRealtimeListeners(){
   if(DEMO_MODE){ refreshDemoCaches(); return; }
-  db.collection('entregas').orderBy('dataAgendada','desc').onSnapshot(snap=>{
+
+  // Para motoristas, a regra de segurança exige que a própria consulta já venha filtrada
+  // por motoristaId (não dá pra buscar a coleção inteira e filtrar só no cliente).
+  const ehMotorista = currentProfile && currentProfile.role === 'motorista';
+  const entregasQuery = ehMotorista
+    ? db.collection('entregas').where('motoristaId', '==', currentUser.uid)
+    : db.collection('entregas').orderBy('dataAgendada', 'desc');
+
+  entregasQuery.onSnapshot(snap=>{
     entregasCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    entregasCache.sort((a,b)=> (b.dataAgendada?.toDate()?.getTime()||0) - (a.dataAgendada?.toDate()?.getTime()||0));
     renderAllAdminViews(); renderMobileHome();
-  }, err=>console.error(err));
+  }, err=>{ console.error(err); toast('Erro ao carregar entregas: '+err.message, 'err'); });
+
   db.collection('motoristas').orderBy('nome').onSnapshot(snap=>{
     motoristasCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
     renderMotoristas(); populateSelects();
