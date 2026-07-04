@@ -1,0 +1,25 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Fotos de canhoto, mercadoria, assinatura e fachada (por entrega)
+    match /entregas/{entregaId}/{fileName} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null
+                   && request.resource.size < 8 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // Logotipo da empresa (configurações) — leitura pública para exibir na tela de login se necessário
+    match /config/{fileName} {
+      allow read:  if true;
+      allow write: if request.auth != null;
+    }
+
+    // Foto de perfil dos usuários
+    match /perfis/{fileName} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null;
+    }
+  }
+}

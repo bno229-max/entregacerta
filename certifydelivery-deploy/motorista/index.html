@@ -1,0 +1,1644 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Certify Delivery · Confirmação Digital de Entrega (POD)</title>
+<meta name="theme-color" content="#2563EB">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Certify Delivery">
+<meta name="mobile-web-app-capable" content="yes">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.3/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+:root{
+  --bg:#F5F6F8;
+  --surface:#FFFFFF;
+  --surface-2:#F1F3F6;
+  --surface-3:#E9ECF1;
+  --border:#E4E7EC;
+  --text:#0F172A;
+  --text-dim:#64748B;
+  --text-faint:#98A2B3;
+  --primary:#2E5CE6;
+  --primary-dim:#EAF1FF;
+  --primary-dark:#1D4ED8;
+  --success:#16A34A;
+  --success-dim:#E9F9EE;
+  --warning:#F59E0B;
+  --warning-dim:#FFF6E5;
+  --danger:#EF4444;
+  --danger-dim:#FDECEC;
+  --slate:#64748B;
+  --slate-dim:#EEF1F5;
+  --sidebar-bg:#10131C;
+  --sidebar-bg-2:#171B27;
+  --sidebar-border:#242938;
+  --sidebar-text:#AAB2C5;
+  --sidebar-text-dim:#6B7284;
+  --sidebar-active-bg:#1B2A4D;
+  --sidebar-active-text:#7CA4FF;
+  --font:'Inter', sans-serif;
+  --mono:'JetBrains Mono', monospace;
+  --radius:14px;
+  --radius-sm:10px;
+  --shadow:0 1px 2px rgba(16,24,40,.04), 0 4px 14px rgba(16,24,40,.05);
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html,body{height:100%;}
+body{background:var(--bg); color:var(--text); font-family:var(--font); -webkit-font-smoothing:antialiased;}
+button{font-family:inherit; cursor:pointer;}
+input,select,textarea{font-family:inherit;}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:var(--surface-3); border-radius:8px;}
+.hidden{display:none !important;}
+
+/* ============ LOADING ============ */
+#loading{position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:9999; flex-direction:column; gap:14px;}
+.spinner{width:36px; height:36px; border-radius:50%; border:3px solid var(--surface-3); border-top-color:var(--primary); animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+#loading .brand{font-weight:800; font-size:14px; color:var(--text-dim); letter-spacing:.04em;}
+
+/* ============ AUTH ============ */
+#auth-screen{min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; background:
+  radial-gradient(circle at 10% 0%, #DCE8FF 0%, transparent 40%),
+  radial-gradient(circle at 100% 100%, #E9F9EE 0%, transparent 40%), var(--bg);}
+.auth-card{width:100%; max-width:420px; background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:34px 30px; box-shadow:var(--shadow);}
+.auth-logo{display:flex; align-items:center; gap:10px; margin-bottom:26px;}
+.auth-logo .mark{width:38px; height:38px; border-radius:11px; background:var(--primary); display:flex; align-items:center; justify-content:center; font-weight:800; color:#fff; font-size:16px;}
+.auth-logo .name{font-weight:800; font-size:18px;}
+.auth-logo .name span{color:var(--primary);}
+h1.auth-title{font-weight:700; font-size:21px; margin-bottom:6px;}
+p.auth-sub{color:var(--text-dim); font-size:13.5px; margin-bottom:24px; line-height:1.55;}
+.field{margin-bottom:15px;}
+.field label{display:block; font-size:12px; font-weight:600; color:var(--text-dim); margin-bottom:7px;}
+.field input, .field select, .field textarea{width:100%; padding:11px 13px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); color:var(--text); font-size:14px; outline:none; transition:border-color .15s;}
+.field input:focus, .field select:focus, .field textarea:focus{border-color:var(--primary); background:#fff;}
+.field-row{display:flex; gap:10px;}
+.field-row .field{flex:1;}
+.btn{border:none; border-radius:var(--radius-sm); padding:11px 18px; font-weight:600; font-size:13.5px; display:inline-flex; align-items:center; justify-content:center; gap:8px; transition:all .15s;}
+.btn-primary{background:var(--primary); color:#fff;}
+.btn-primary:hover{background:var(--primary-dark);}
+.btn-ghost{background:#fff; color:var(--text-dim); border:1px solid var(--border);}
+.btn-ghost:hover{color:var(--text); border-color:var(--text-faint);}
+.btn-danger{background:var(--danger-dim); color:var(--danger);}
+.btn-sm{padding:7px 11px; font-size:12px;}
+.btn-block{width:100%;}
+.btn:disabled{opacity:.5; cursor:not-allowed;}
+.auth-links{display:flex; justify-content:space-between; margin-top:14px;}
+.auth-links button{background:none; border:none; color:var(--primary); font-size:12.5px; font-weight:600; padding:0;}
+.auth-error{background:var(--danger-dim); border:1px solid #F8C9C9; color:var(--danger); font-size:12.5px; padding:10px 12px; border-radius:var(--radius-sm); margin-bottom:16px; display:none;}
+.auth-success{background:var(--success-dim); border:1px solid #BFEBCB; color:var(--success); font-size:12.5px; padding:10px 12px; border-radius:var(--radius-sm); margin-bottom:16px; display:none;}
+.test-note{margin-top:18px; font-size:11px; color:var(--text-faint); line-height:1.6; border-top:1px dashed var(--border); padding-top:14px;}
+
+/* ============ ADMIN SHELL ============ */
+#admin-app{display:none;}
+.admin-shell{display:flex; min-height:100vh;}
+.sidebar{width:236px; background:var(--sidebar-bg); border-right:1px solid var(--sidebar-border); display:flex; flex-direction:column; padding:20px 14px; flex-shrink:0; position:sticky; top:0; height:100vh; transition:width .18s ease; overflow:visible;}
+.sidebar.collapsed{width:72px; padding:20px 10px;}
+.sidebar.collapsed .sidebar-text{display:none;}
+.sidebar.collapsed .nav-item{justify-content:center; padding:10px;}
+.sidebar.collapsed .auth-logo{justify-content:center;}
+.sidebar.collapsed .sidebar-footer{justify-content:center;}
+.collapse-btn{position:absolute; top:22px; right:-12px; width:24px; height:24px; border-radius:50%; background:#fff; border:1px solid var(--border); box-shadow:var(--shadow); display:flex; align-items:center; justify-content:center; font-size:10.5px; color:var(--text-dim); z-index:5;}
+.collapse-btn:hover{color:var(--primary); border-color:var(--primary);}
+.sidebar .auth-logo{margin-bottom:26px; padding-left:4px;}
+.sidebar .auth-logo .name{color:#fff;}
+.nav-item{display:flex; align-items:center; gap:12px; padding:10px 13px; border-radius:10px; color:var(--sidebar-text); font-size:13.5px; font-weight:500; cursor:pointer; margin-bottom:2px; white-space:nowrap;}
+.nav-item i{width:17px; text-align:center; font-size:14px;}
+.nav-item:hover{background:var(--sidebar-bg-2); color:#fff;}
+.nav-item.active{background:var(--sidebar-active-bg); color:var(--sidebar-active-text); font-weight:600;}
+.sidebar-footer{margin-top:auto; border-top:1px solid var(--sidebar-border); padding-top:14px; display:flex; align-items:center; gap:10px;}
+.sidebar-footer .who .n{color:#fff;}
+.sidebar-footer .who .r{color:var(--sidebar-text-dim);}
+.sidebar-footer button{color:var(--sidebar-text-dim);}
+.sidebar-footer button:hover{color:#fff;}
+.avatar{width:34px; height:34px; border-radius:50%; background:var(--surface-3); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-weight:700; color:var(--text-dim); overflow:hidden; font-size:12px;}
+.avatar img{width:100%; height:100%; object-fit:cover;}
+.sidebar-footer .who{flex:1; min-width:0;}
+.sidebar-footer .who .n{font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.sidebar-footer .who .r{font-size:11px; color:var(--text-faint);}
+.sidebar-footer button{background:none; border:none; color:var(--text-faint); font-size:14px;}
+
+.main-panel{flex:1; padding:26px 32px; max-width:100%; overflow-x:hidden;}
+.panel-header{display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:22px; flex-wrap:wrap; gap:12px;}
+.panel-title{font-weight:700; font-size:22px;}
+.panel-sub{color:var(--text-dim); font-size:13px; margin-top:3px;}
+.view{display:none;}
+.view.active{display:block;}
+.mobile-topbar{display:none; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--border); background:var(--surface); position:sticky; top:0; z-index:50;}
+.mobile-topbar button{background:none; border:none; color:var(--text); font-size:17px;}
+
+@media (max-width:960px){
+  .sidebar{position:fixed; left:-260px; top:0; height:100vh; z-index:100; transition:left .2s; box-shadow:0 0 30px rgba(0,0,0,.15);}
+  .sidebar.open{left:0;}
+  .mobile-topbar{display:flex;}
+  .main-panel{padding:18px 14px;}
+}
+
+/* KPI cards */
+.date-filter-bar{display:flex; gap:10px; align-items:center; margin-bottom:18px; flex-wrap:wrap;}
+.date-filter-bar select, .date-filter-bar input[type=date]{padding:9px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); font-size:13px; background:#fff; color:var(--text); outline:none;}
+.date-filter-bar select:focus, .date-filter-bar input:focus{border-color:var(--primary);}
+.period-label{font-size:12px; font-weight:700; background:var(--primary-dim); color:var(--primary); padding:7px 14px; border-radius:20px; white-space:nowrap;}
+.kpi-grid{display:flex; gap:10px; margin-bottom:20px; overflow-x:auto; padding-bottom:4px;}
+.kpi-card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:15px 16px; box-shadow:var(--shadow); flex:1 1 0; min-width:132px; cursor:pointer; transition:all .15s;}
+.kpi-card:hover{border-color:var(--text-faint); transform:translateY(-1px);}
+.kpi-card.selected{border-color:var(--primary); box-shadow:0 0 0 1px var(--primary);}
+.kpi-icon{width:28px; height:28px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:12px; margin-bottom:10px;}
+.kpi-icon.i-slate{background:var(--slate-dim); color:var(--slate);}
+.kpi-icon.i-primary{background:var(--primary-dim); color:var(--primary);}
+.kpi-icon.i-warning{background:var(--warning-dim); color:#B45309;}
+.kpi-icon.i-danger{background:var(--danger-dim); color:var(--danger);}
+.kpi-icon.i-success{background:var(--success-dim); color:var(--success);}
+.kpi-card .label{font-size:10.5px; color:var(--text-dim); font-weight:600; margin-bottom:8px; text-transform:uppercase; letter-spacing:.02em; white-space:nowrap;}
+.kpi-card .value{font-weight:800; font-size:21px;}
+.kpi-card .sub{font-size:11px; color:var(--text-faint); margin-top:5px;}
+.kpi-card.k-primary .value{color:var(--primary);}
+.kpi-card.k-success .value{color:var(--success);}
+.kpi-card.k-warning .value{color:var(--warning);}
+.kpi-card.k-danger .value{color:var(--danger);}
+
+.dash-grid{display:grid; grid-template-columns:2fr 1fr; gap:16px; margin-bottom:16px;}
+@media (max-width:960px){ .dash-grid{grid-template-columns:1fr;} }
+.panel-card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow);}
+.panel-card h4{font-weight:700; font-size:14.5px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center;}
+.chart-tabs{display:flex; gap:6px;}
+.chart-tab{padding:5px 10px; border-radius:7px; background:var(--surface-2); border:1px solid var(--border); font-size:11.5px; font-weight:600; color:var(--text-dim);}
+.chart-tab.active{background:var(--primary-dim); border-color:var(--primary); color:var(--primary);}
+.rank-list{list-style:none;}
+.rank-list li{display:flex; justify-content:space-between; align-items:center; padding:9px 0; font-size:13px; border-bottom:1px solid var(--border);}
+.rank-list li:last-child{border-bottom:none;}
+.rank-list .rk{display:flex; align-items:center; gap:9px;}
+.rank-badge{width:22px; height:22px; border-radius:6px; background:var(--primary-dim); color:var(--primary); font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center;}
+
+/* Toolbar / table */
+.toolbar{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:16px;}
+.search-wrap{position:relative; flex:1; min-width:200px;}
+.search-wrap i{position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-faint); font-size:12.5px;}
+.search-wrap input{width:100%; padding:10px 14px 10px 34px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); font-size:13.5px; outline:none;}
+.search-wrap input:focus{border-color:var(--primary);}
+.toolbar select, .toolbar input[type=date]{padding:10px 12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); font-size:13px; outline:none; color:var(--text);}
+
+.table-wrap{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow);}
+.data-table{width:100%; border-collapse:collapse;}
+.data-table th{text-align:left; padding:12px 16px; font-size:11px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.03em; border-bottom:1px solid var(--border); background:var(--surface-2); font-weight:700;}
+.data-table td{padding:12px 16px; font-size:13px; border-bottom:1px solid var(--border); vertical-align:middle;}
+.data-table tr:last-child td{border-bottom:none;}
+.data-table tr:hover td{background:var(--surface-2);}
+.badge{padding:4px 10px; border-radius:20px; font-size:11px; font-weight:700; display:inline-block; white-space:nowrap;}
+.badge-aguardando{background:var(--slate-dim); color:var(--slate);}
+.badge-em_rota{background:var(--primary-dim); color:var(--primary);}
+.badge-entregue{background:var(--success-dim); color:var(--success);}
+.badge-nao_entregue{background:var(--danger-dim); color:var(--danger);}
+.badge-problema{background:var(--warning-dim); color:#B45309;}
+.badge-ativo{background:var(--success-dim); color:var(--success);}
+.badge-inativo{background:var(--slate-dim); color:var(--slate);}
+.empty-state{text-align:center; padding:44px 16px; color:var(--text-faint);}
+.empty-state i{font-size:26px; margin-bottom:8px; display:block; opacity:.5;}
+.thumb-sm{width:34px; height:34px; border-radius:8px; object-fit:cover; background:var(--surface-3);}
+
+/* Modal */
+.modal-backdrop{position:fixed; inset:0; background:rgba(15,23,42,.45); backdrop-filter:blur(2px); z-index:1000; display:flex; align-items:center; justify-content:center; padding:20px; opacity:0; pointer-events:none; transition:opacity .18s;}
+.modal-backdrop.open{opacity:1; pointer-events:auto;}
+.modal{background:var(--surface); border-radius:18px; width:100%; max-width:520px; max-height:88vh; overflow-y:auto; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,.25);}
+.modal.modal-lg{max-width:680px;}
+.modal-header{display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;}
+.modal-header h3{font-weight:700; font-size:17px;}
+.modal-close{background:none; border:none; color:var(--text-faint); font-size:17px;}
+.modal-actions{display:flex; gap:10px; margin-top:20px;}
+.modal-actions .btn{flex:1;}
+.toast-wrap{position:fixed; top:18px; right:18px; z-index:2000; display:flex; flex-direction:column; gap:10px;}
+.toast{background:#fff; border:1px solid var(--border); border-left:3px solid var(--primary); padding:12px 16px; border-radius:10px; font-size:13px; max-width:320px; box-shadow:0 8px 24px rgba(0,0,0,.12);}
+.toast.err{border-left-color:var(--danger);}
+.toast.ok{border-left-color:var(--success);}
+
+.detail-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+.detail-item{background:var(--surface-2); border-radius:var(--radius-sm); padding:12px 14px;}
+.detail-item .l{font-size:10.5px; color:var(--text-faint); text-transform:uppercase; font-weight:700; margin-bottom:4px;}
+.detail-item .v{font-size:13.5px; font-weight:600;}
+.detail-photos{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:14px 0;}
+.detail-photos img{width:100%; border-radius:10px; height:140px; object-fit:cover; border:1px solid var(--border);}
+.timeline{list-style:none; margin-top:14px;}
+.timeline li{display:flex; gap:10px; padding:9px 0; font-size:12.5px; border-left:2px solid var(--border); padding-left:14px; margin-left:6px; position:relative;}
+.timeline li::before{content:''; position:absolute; left:-6px; top:12px; width:10px; height:10px; border-radius:50%; background:var(--primary); border:2px solid #fff;}
+.timeline .t-time{color:var(--text-faint); min-width:110px; flex-shrink:0;}
+
+/* ============ MOBILE PWA (entregador) ============ */
+#mobile-app{display:none; min-height:100vh; flex-direction:column; max-width:480px; margin:0 auto; background:var(--bg); position:relative;}
+.mob-header{padding:20px 20px 16px; background:var(--primary); color:#fff; position:sticky; top:0; z-index:30;}
+.mob-header .greet{font-size:18px; font-weight:700;}
+.mob-header .pend-badge{margin-top:10px; background:rgba(255,255,255,.16); display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border-radius:20px; font-size:13px; font-weight:600;}
+.mob-topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;}
+.mob-topbar button{background:rgba(255,255,255,.16); border:none; color:#fff; width:34px; height:34px; border-radius:50%; font-size:14px;}
+.mob-content{flex:1; padding:18px 18px 30px; overflow-y:auto;}
+.seg-tabs{display:flex; gap:8px; margin-bottom:16px;}
+.seg-tab{flex:1; text-align:center; padding:9px; border-radius:10px; background:var(--surface); border:1px solid var(--border); font-size:12.5px; font-weight:600; color:var(--text-dim);}
+.seg-tab.active{background:var(--primary); border-color:var(--primary); color:#fff;}
+.delivery-card{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px; margin-bottom:12px; box-shadow:var(--shadow); cursor:pointer;}
+.delivery-card .top-row{display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:8px;}
+.delivery-card .cli{font-weight:700; font-size:14.5px;}
+.delivery-card .nf{font-family:var(--mono); font-size:11.5px; color:var(--text-faint); margin-top:2px;}
+.delivery-card .addr{font-size:12.5px; color:var(--text-dim); margin-top:8px; display:flex; gap:6px; align-items:flex-start;}
+
+/* delivery detail / wizard */
+#mob-view-detalhe, #mob-view-wizard, #mob-view-problema{display:none;}
+.back-row{display:flex; align-items:center; gap:10px; margin-bottom:16px;}
+.back-row button{background:var(--surface); border:1px solid var(--border); width:34px; height:34px; border-radius:50%; font-size:13px;}
+.back-row .ttl{font-weight:700; font-size:16px;}
+.info-card{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:18px; margin-bottom:16px;}
+.info-row{display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); font-size:13px;}
+.info-row:last-child{border-bottom:none;}
+.info-row i{width:16px; color:var(--text-faint); margin-top:2px;}
+.info-row .l{color:var(--text-faint); font-size:11px; text-transform:uppercase; font-weight:700; display:block; margin-bottom:2px;}
+
+.step-progress{display:flex; align-items:center; gap:6px; margin-bottom:20px;}
+.step-dot{flex:1; height:5px; border-radius:6px; background:var(--surface-3);}
+.step-dot.done{background:var(--primary);}
+.step-label{font-size:12px; color:var(--text-dim); font-weight:600; margin-bottom:16px;}
+.capture-box{border:2px dashed var(--border); border-radius:16px; padding:26px 16px; text-align:center; background:var(--surface); margin-bottom:16px;}
+.capture-box i{font-size:26px; color:var(--text-faint);}
+.capture-box .txt{font-size:12.5px; color:var(--text-dim); margin-top:8px;}
+.capture-box img{max-width:100%; max-height:220px; border-radius:10px; margin-top:12px;}
+#signature-pad{width:100%; height:220px; border-radius:14px; background:#fff; border:2px dashed var(--border); touch-action:none;}
+.sig-actions{display:flex; gap:10px; margin-top:10px;}
+.wizard-nav{display:flex; gap:10px; margin-top:20px;}
+.wizard-nav .btn{flex:1;}
+
+.bn-fixed{position:sticky; bottom:0; padding:14px 18px calc(14px + env(safe-area-inset-bottom)); background:linear-gradient(0deg, var(--bg) 60%, transparent);}
+
+@media (min-width:481px){ #mobile-app{border-left:1px solid var(--border); border-right:1px solid var(--border); box-shadow:0 0 60px rgba(0,0,0,.08);} }
+</style>
+</head>
+<body>
+
+<div id="loading"><div class="spinner"></div><div class="brand">Certify Delivery</div></div>
+
+<!-- ============ AUTH ============ -->
+<div id="auth-screen" style="display:none;">
+  <div class="auth-card">
+    <div class="auth-logo"><div class="mark"><i class="fa-solid fa-truck-fast"></i></div><div class="name">Certify<span>Delivery</span></div></div>
+
+    <div id="auth-demo-block">
+      <h1 class="auth-title">Testar agora (modo demonstração)</h1>
+      <p class="auth-sub">Roda no navegador com dados de exemplo, sem precisar configurar o Firebase ainda.</p>
+      <button class="btn btn-primary btn-block" id="demo-admin" style="margin-bottom:10px;"><i class="fa-solid fa-user-tie"></i> Entrar como Administrador</button>
+      <button class="btn btn-ghost btn-block" id="demo-motorista"><i class="fa-solid fa-truck"></i> Entrar como Motorista (PWA)</button>
+      <div class="auth-links"><button id="link-to-login">Já tenho Firebase configurado</button><span></span></div>
+    </div>
+
+    <div id="auth-login-block" class="hidden">
+      <div class="auth-links" style="margin-bottom:14px;"><button id="link-to-demo">&larr; Voltar ao modo demonstração</button><span></span></div>
+      <h1 class="auth-title">Entrar</h1>
+      <p class="auth-sub">Acesse com o e-mail e senha cadastrados.</p>
+      <div class="auth-error" id="auth-error"></div>
+      <div class="auth-success" id="auth-success"></div>
+      <div class="field"><label>E-mail</label><input type="email" id="login-email" placeholder="voce@empresa.com"></div>
+      <div class="field"><label>Senha</label><input type="password" id="login-password" placeholder="••••••••"></div>
+      <button class="btn btn-primary btn-block" id="btn-login">Entrar</button>
+      <div class="auth-links"><button id="link-forgot">Esqueci minha senha</button><span></span></div>
+      <div class="test-note"><b>Importante:</b> seu acesso é criado pelo administrador. Se esqueceu a senha, use "Esqueci minha senha" acima.</div>
+    </div>
+
+    <div id="auth-forgot-block" class="hidden">
+      <h1 class="auth-title">Recuperar senha</h1>
+      <p class="auth-sub">Informe seu e-mail cadastrado.</p>
+      <div class="auth-error" id="forgot-error"></div>
+      <div class="auth-success" id="forgot-success"></div>
+      <div class="field"><label>E-mail</label><input type="email" id="forgot-email"></div>
+      <button class="btn btn-primary btn-block" id="btn-forgot">Enviar link de recuperação</button>
+      <div class="auth-links"><button id="link-back-login">Voltar para o login</button><span></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ADMIN APP ============ -->
+<!-- ============ ACESSO RESTRITO ============ -->
+<div id="restricted-screen" style="display:none; min-height:100vh; align-items:center; justify-content:center; padding:24px; background:var(--bg);">
+  <div class="auth-card" style="text-align:center;">
+    <div class="auth-logo" style="justify-content:center;"><div class="mark"><i class="fa-solid fa-truck-fast"></i></div><div class="name">Certify<span>Delivery</span></div></div>
+    <h1 class="auth-title">Acesso restrito</h1>
+    <p class="auth-sub" id="restricted-text">Este endereço é exclusivo para motoristas.</p>
+    <button class="btn btn-ghost btn-block" id="btn-restricted-logout">Sair e voltar ao login</button>
+  </div>
+</div>
+
+<div id="admin-app">
+  <div class="admin-shell">
+    <div class="mobile-topbar" style="position:fixed; top:0; left:0; right:0;">
+      <button id="btn-open-sidebar"><i class="fa-solid fa-bars"></i></button>
+      <div style="font-weight:800; font-size:14px;">Entrega<span style="color:var(--primary);">Certa</span></div>
+      <div style="width:16px;"></div>
+    </div>
+    <aside class="sidebar" id="sidebar">
+      <button class="collapse-btn" id="btn-collapse-sidebar"><i class="fa-solid fa-chevron-left"></i></button>
+      <div class="auth-logo"><div class="mark"><i class="fa-solid fa-truck-fast"></i></div><div class="name sidebar-text">Certify<span>Delivery</span></div></div>
+      <nav>
+        <div class="nav-item active" data-view="v-dashboard"><i class="fa-solid fa-chart-line"></i> <span class="sidebar-text">Dashboard</span></div>
+        <div class="nav-item" data-view="v-entregas"><i class="fa-solid fa-box"></i> <span class="sidebar-text">Entregas</span></div>
+        <div class="nav-item" data-view="v-motoristas"><i class="fa-solid fa-id-card"></i> <span class="sidebar-text">Motoristas</span></div>
+        <div class="nav-item" data-view="v-clientes"><i class="fa-solid fa-building"></i> <span class="sidebar-text">Clientes</span></div>
+        <div class="nav-item" data-view="v-config"><i class="fa-solid fa-gear"></i> <span class="sidebar-text">Configurações</span></div>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="avatar" id="admin-avatar">A</div>
+        <div class="who sidebar-text"><div class="n" id="admin-name">—</div><div class="r">Administrador</div></div>
+        <button id="btn-logout-admin" title="Sair"><i class="fa-solid fa-right-from-bracket"></i></button>
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <!-- DASHBOARD -->
+      <section class="view active" id="v-dashboard">
+        <div class="panel-header">
+          <div><div class="panel-title">Dashboard</div><div class="panel-sub" id="empresa-sub">Visão geral das entregas</div></div>
+        </div>
+
+        <div class="date-filter-bar">
+          <select id="periodo-preset">
+            <option value="hoje">Hoje</option>
+            <option value="7dias">Últimos 7 dias</option>
+            <option value="30dias" selected>Últimos 30 dias</option>
+            <option value="mes">Este mês</option>
+            <option value="personalizado">Personalizado</option>
+          </select>
+          <input type="date" id="periodo-data-ini" class="hidden">
+          <input type="date" id="periodo-data-fim" class="hidden">
+          <button class="btn btn-ghost btn-sm hidden" id="btn-aplicar-periodo">Aplicar</button>
+          <span class="period-label" id="period-label-text">—</span>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card selected" data-filter="todas"><div class="kpi-icon i-slate"><i class="fa-solid fa-boxes-stacked"></i></div><div class="label">Total de entregas</div><div class="value" id="kpi-total">0</div></div>
+          <div class="kpi-card" data-filter="entregue"><div class="kpi-icon i-primary"><i class="fa-solid fa-circle-check"></i></div><div class="label">Entregues no período</div><div class="value" id="kpi-hoje">0</div></div>
+          <div class="kpi-card" data-filter="pendente"><div class="kpi-icon i-warning"><i class="fa-solid fa-clock"></i></div><div class="label">Pendentes</div><div class="value" id="kpi-pendentes">0</div></div>
+          <div class="kpi-card" data-filter="entregue"><div class="kpi-icon i-success"><i class="fa-solid fa-percent"></i></div><div class="label">% Entregue</div><div class="value" id="kpi-pct-entregue">0%</div></div>
+          <div class="kpi-card" data-filter="pendente"><div class="kpi-icon i-slate"><i class="fa-solid fa-hourglass-half"></i></div><div class="label">% Pendente</div><div class="value" id="kpi-pct-pendente">0%</div></div>
+          <div class="kpi-card" data-filter="nao_entregue"><div class="kpi-icon i-danger"><i class="fa-solid fa-circle-xmark"></i></div><div class="label">% Não entregue</div><div class="value" id="kpi-pct-nao">0%</div></div>
+        </div>
+
+        <div class="dash-grid">
+          <div class="panel-card">
+            <h4><span id="lista-entregas-titulo">Todas as entregas do período</span> <span class="period-label" id="lista-entregas-count" style="font-size:11px;">0</span></h4>
+            <div class="table-wrap" style="box-shadow:none; max-height:360px; overflow-y:auto;">
+              <table class="data-table"><thead><tr><th>NF</th><th>Cliente</th><th>Motorista</th><th>Status</th><th>Data</th></tr></thead><tbody id="tbl-ultimas"></tbody></table>
+            </div>
+          </div>
+          <div class="panel-card">
+            <h4>Ranking de motoristas</h4>
+            <ul class="rank-list" id="ranking-motoristas"><li style="color:var(--text-faint);">Sem dados ainda</li></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- ENTREGAS -->
+      <section class="view" id="v-entregas">
+        <div class="panel-header">
+          <div><div class="panel-title">Entregas</div><div class="panel-sub">Cadastro e acompanhamento de entregas</div></div>
+          <div style="display:flex; gap:10px;">
+            <label class="btn btn-ghost" style="cursor:pointer;"><i class="fa-solid fa-file-arrow-up"></i> Importar notas
+              <input type="file" id="input-planilha-entregas" accept=".xlsx,.xls,.csv" class="hidden">
+            </label>
+            <button class="btn btn-primary" id="btn-nova-entrega"><i class="fa-solid fa-plus"></i> Nova entrega</button>
+          </div>
+        </div>
+        <div class="toolbar">
+          <div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="busca-entrega" placeholder="Buscar por NF, cliente ou motorista"></div>
+          <select id="filtro-status-entrega">
+            <option value="">Todos os status</option>
+            <option value="aguardando">Aguardando</option>
+            <option value="em_rota">Em rota</option>
+            <option value="entregue">Entregue</option>
+            <option value="nao_entregue">Não entregue</option>
+            <option value="problema">Problema na entrega</option>
+          </select>
+          <select id="filtro-motorista-entrega"><option value="">Todos os motoristas</option></select>
+          <select id="filtro-cliente-entrega"><option value="">Todos os clientes</option></select>
+          <input type="date" id="filtro-data-entrega">
+          <button class="btn btn-ghost btn-sm" id="btn-limpar-filtros-entrega">Limpar</button>
+        </div>
+        <div class="table-wrap"><div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr><th>NF</th><th>Cliente</th><th>Motorista</th><th>Status</th><th>Data</th><th>Hora</th><th>Recebedor</th><th>Assinatura</th><th></th></tr></thead>
+          <tbody id="tbl-entregas"></tbody>
+        </table></div></div>
+        <div class="empty-state hidden" id="empty-entregas"><i class="fa-solid fa-box-open"></i>Nenhuma entrega encontrada.</div>
+      </section>
+
+      <!-- MOTORISTAS -->
+      <section class="view" id="v-motoristas">
+        <div class="panel-header">
+          <div><div class="panel-title">Motoristas</div><div class="panel-sub">Cadastro da equipe de entrega</div></div>
+          <button class="btn btn-primary" id="btn-novo-motorista"><i class="fa-solid fa-plus"></i> Cadastrar motorista</button>
+        </div>
+        <div class="toolbar"><div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="busca-motorista" placeholder="Buscar por nome, CPF ou placa"></div></div>
+        <div class="table-wrap"><div style="overflow-x:auto;">
+        <table class="data-table"><thead><tr><th>Nome</th><th>CPF</th><th>Telefone</th><th>Veículo</th><th>Placa</th><th>Status</th><th></th></tr></thead><tbody id="tbl-motoristas"></tbody></table>
+        </div></div>
+        <div class="empty-state hidden" id="empty-motoristas"><i class="fa-solid fa-id-card"></i>Nenhum motorista cadastrado.</div>
+      </section>
+
+      <!-- CLIENTES -->
+      <section class="view" id="v-clientes">
+        <div class="panel-header">
+          <div><div class="panel-title">Clientes</div><div class="panel-sub">Empresas atendidas</div></div>
+          <button class="btn btn-primary" id="btn-novo-cliente"><i class="fa-solid fa-plus"></i> Cadastrar cliente</button>
+        </div>
+        <div class="toolbar"><div class="search-wrap"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="busca-cliente" placeholder="Buscar por nome ou CNPJ"></div></div>
+        <div class="table-wrap"><div style="overflow-x:auto;">
+        <table class="data-table"><thead><tr><th>Empresa</th><th>CNPJ</th><th>Cidade/UF</th><th>Responsável</th><th>Telefone</th><th></th></tr></thead><tbody id="tbl-clientes"></tbody></table>
+        </div></div>
+        <div class="empty-state hidden" id="empty-clientes"><i class="fa-solid fa-building"></i>Nenhum cliente cadastrado.</div>
+      </section>
+
+      <!-- CONFIGURAÇÕES -->
+      <section class="view" id="v-config">
+        <div class="panel-header"><div><div class="panel-title">Configurações</div><div class="panel-sub">Dados da empresa (tenant)</div></div></div>
+        <div class="panel-card" style="max-width:560px;">
+          <h4>Identificação</h4>
+          <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
+            <div class="avatar" id="cfg-logo-preview" style="width:56px; height:56px; font-size:18px;"><i class="fa-solid fa-building"></i></div>
+            <label class="btn btn-ghost btn-sm" style="cursor:pointer;">Alterar logotipo<input type="file" id="cfg-logo-input" accept="image/*" class="hidden"></label>
+          </div>
+          <div class="field"><label>Nome da empresa</label><input type="text" id="cfg-nome" placeholder="Ex: Transportadora Rápida"></div>
+          <div class="field"><label>CNPJ</label><input type="text" id="cfg-cnpj" placeholder="00.000.000/0001-00"></div>
+          <div class="field"><label>Endereço</label><input type="text" id="cfg-endereco"></div>
+          <div class="field-row">
+            <div class="field"><label>E-mail</label><input type="email" id="cfg-email"></div>
+            <div class="field"><label>Telefone</label><input type="text" id="cfg-telefone"></div>
+          </div>
+          <button class="btn btn-primary" id="btn-salvar-config">Salvar configurações</button>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ============ MOBILE PWA (motorista) ============ -->
+<div id="mobile-app">
+  <!-- Home -->
+  <div id="mob-view-home">
+    <div class="mob-header">
+      <div class="mob-topbar">
+        <div class="greet" id="mob-greet">Olá!</div>
+        <button id="btn-logout-mobile"><i class="fa-solid fa-right-from-bracket"></i></button>
+      </div>
+      <div class="pend-badge"><i class="fa-solid fa-box"></i> <span id="mob-count-pend">0</span> entregas pendentes</div>
+    </div>
+    <div class="mob-content">
+      <div class="seg-tabs">
+        <button class="seg-tab active" data-tab="pendentes">Pendentes</button>
+        <button class="seg-tab" data-tab="entregues">Finalizadas</button>
+      </div>
+      <div id="mob-lista-entregas"></div>
+      <div class="empty-state hidden" id="mob-empty"><i class="fa-solid fa-box-open"></i>Nenhuma entrega por aqui.</div>
+    </div>
+  </div>
+
+  <!-- Detalhe -->
+  <div id="mob-view-detalhe">
+    <div class="mob-content">
+      <div class="back-row"><button id="btn-voltar-detalhe"><i class="fa-solid fa-arrow-left"></i></button><div class="ttl">Detalhes da entrega</div></div>
+      <div class="info-card" id="detalhe-info-card"></div>
+      <div id="detalhe-acoes" style="display:flex; gap:10px;">
+        <button class="btn btn-primary" style="flex:1;" id="btn-iniciar-entrega">Iniciar Comprovante</button>
+        <button class="btn btn-danger" style="flex:1;" id="btn-problema-entrega">Problema na Entrega</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Problema na entrega -->
+  <div id="mob-view-problema">
+    <div class="mob-content">
+      <div class="back-row"><button id="btn-voltar-problema"><i class="fa-solid fa-arrow-left"></i></button><div class="ttl">Problema na entrega</div></div>
+      <div class="field">
+        <label>Motivo</label>
+        <select id="problema-motivo">
+          <option value="" selected disabled>Selecione o motivo</option>
+          <option value="Local Fechado">Local Fechado</option>
+          <option value="Ninguém no Local">Ninguém no Local</option>
+          <option value="Outros Problemas">Outros Problemas</option>
+        </select>
+      </div>
+      <div class="capture-box" id="box-fachada"><i class="fa-solid fa-camera"></i><div class="txt">Toque para fotografar o estabelecimento/fachada</div><img id="preview-fachada" class="hidden"></div>
+      <input type="file" accept="image/*" capture="environment" id="input-fachada" class="hidden">
+      <button class="btn btn-danger btn-block" id="btn-confirmar-nao-entrega" style="margin-top:6px;">Confirmar não entrega</button>
+      <div class="info-card" style="font-size:12.5px; color:var(--text-dim); margin-top:14px;">
+        <i class="fa-solid fa-triangle-exclamation" style="color:var(--warning);"></i> Antes de seguir para o próximo estabelecimento, comunique o responsável pela logística sobre esta ocorrência.
+      </div>
+    </div>
+  </div>
+
+  <!-- Wizard -->
+  <div id="mob-view-wizard">
+    <div class="mob-content">
+      <div class="back-row"><button id="btn-voltar-wizard"><i class="fa-solid fa-arrow-left"></i></button><div class="ttl" id="wizard-title">Etapa 1 de 5</div></div>
+      <div class="step-progress" id="step-progress"></div>
+
+      <div class="wizard-step" id="step-1">
+        <div class="step-label">Etapa 1 · Fotografe o canhoto assinado</div>
+        <div class="capture-box" id="box-canhoto"><i class="fa-solid fa-camera"></i><div class="txt">Toque para tirar a foto do canhoto</div><img id="preview-canhoto" class="hidden"></div>
+        <input type="file" accept="image/*" capture="environment" id="input-canhoto" class="hidden">
+      </div>
+
+      <div class="wizard-step hidden" id="step-2">
+        <div class="step-label">Etapa 2 · Fotografe a mercadoria entregue</div>
+        <div class="capture-box" id="box-mercadoria"><i class="fa-solid fa-camera"></i><div class="txt">Toque para tirar a foto da mercadoria</div><img id="preview-mercadoria" class="hidden"></div>
+        <input type="file" accept="image/*" capture="environment" id="input-mercadoria" class="hidden">
+      </div>
+
+      <div class="wizard-step hidden" id="step-3">
+        <div class="step-label">Etapa 3 · Assinatura e identificação do recebedor</div>
+        <canvas id="signature-pad"></canvas>
+        <div class="sig-actions">
+          <button class="btn btn-ghost btn-block btn-sm" id="btn-limpar-assinatura">Limpar assinatura</button>
+        </div>
+        <div class="field" style="margin-top:16px;"><label>Nome do recebedor</label><input type="text" id="rec-nome" placeholder="Nome completo"></div>
+        <div class="field-row">
+          <div class="field" style="max-width:110px;"><label>Documento</label>
+            <select id="rec-doc-tipo"><option value="CPF">CPF</option><option value="RG">RG</option></select>
+          </div>
+          <div class="field"><label>Número</label><input type="text" id="rec-doc" placeholder="000.000.000-00"></div>
+        </div>
+        <div class="field"><label>Cargo</label><input type="text" id="rec-cargo" placeholder="Ex: Porteiro, Recepcionista"></div>
+        <div class="field"><label>Telefone (opcional)</label><input type="text" id="rec-telefone" placeholder="(00) 00000-0000"></div>
+      </div>
+
+      <div class="wizard-step hidden" id="step-4">
+        <div class="step-label">Etapa 4 · Observações</div>
+        <div class="field"><textarea id="obs-entrega" rows="5" placeholder="Alguma observação sobre a entrega? (opcional)"></textarea></div>
+        <div class="info-card" style="font-size:12.5px; color:var(--text-dim);">
+          <i class="fa-solid fa-circle-info"></i> Ao finalizar, registraremos automaticamente data, hora, dispositivo e localização (se permitido).
+        </div>
+      </div>
+
+      <div class="wizard-nav">
+        <button class="btn btn-ghost" id="btn-wizard-voltar">Voltar</button>
+        <button class="btn btn-primary" id="btn-wizard-avancar">Avançar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: NOVA/EDITAR ENTREGA ============ -->
+<div class="modal-backdrop" id="modal-entrega">
+  <div class="modal">
+    <div class="modal-header"><h3 id="modal-entrega-title">Nova entrega</h3><button class="modal-close" data-close="modal-entrega"><i class="fa-solid fa-xmark"></i></button></div>
+    <div class="field-row">
+      <div class="field"><label>Número da Nota Fiscal</label><input type="text" id="ent-nf" placeholder="Ex: 123456"></div>
+      <div class="field"><label>Série</label><input type="text" id="ent-serie" placeholder="Ex: 1"></div>
+    </div>
+    <div class="field"><label>Cliente</label><select id="ent-cliente"></select></div>
+    <div class="field"><label>Motorista responsável</label><select id="ent-motorista"></select></div>
+    <div class="field-row">
+      <div class="field"><label>Data</label><input type="date" id="ent-data"></div>
+      <div class="field"><label>Status</label>
+        <select id="ent-status">
+          <option value="aguardando">Aguardando</option>
+          <option value="em_rota">Em rota</option>
+          <option value="entregue">Entregue</option>
+          <option value="nao_entregue">Não entregue</option>
+          <option value="problema">Problema na entrega</option>
+        </select>
+      </div>
+    </div>
+    <div class="field"><label>Observações</label><textarea id="ent-obs" rows="3"></textarea></div>
+    <button class="btn btn-primary btn-block" id="btn-salvar-entrega">Salvar entrega</button>
+  </div>
+</div>
+
+<!-- ============ MODAL: DETALHE ENTREGA (admin) ============ -->
+<div class="modal-backdrop" id="modal-detalhe-entrega">
+  <div class="modal modal-lg"><div class="modal-header"><h3>Comprovante de entrega</h3><button class="modal-close" data-close="modal-detalhe-entrega"><i class="fa-solid fa-xmark"></i></button></div>
+    <div id="detalhe-entrega-body"></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: MOTORISTA ============ -->
+<div class="modal-backdrop" id="modal-motorista">
+  <div class="modal"><div class="modal-header"><h3 id="modal-motorista-title">Cadastrar motorista</h3><button class="modal-close" data-close="modal-motorista"><i class="fa-solid fa-xmark"></i></button></div>
+    <div class="field"><label>Nome</label><input type="text" id="mot-nome"></div>
+    <div class="field-row"><div class="field"><label>CPF</label><input type="text" id="mot-cpf" placeholder="000.000.000-00"></div><div class="field"><label>RG</label><input type="text" id="mot-rg"></div></div>
+    <div class="field-row"><div class="field"><label>Telefone</label><input type="text" id="mot-telefone"></div><div class="field"><label>E-mail</label><input type="email" id="mot-email"></div></div>
+    <div class="field"><label>Senha de acesso</label><input type="password" id="mot-senha" placeholder="Definida no primeiro cadastro"></div>
+    <div class="field-row"><div class="field"><label>Placa do veículo</label><input type="text" id="mot-placa" placeholder="ABC-1D23"></div><div class="field"><label>Modelo do veículo</label><input type="text" id="mot-modelo" placeholder="Ex: Fiorino"></div></div>
+    <div class="field"><label>Status</label><select id="mot-status"><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></div>
+    <button class="btn btn-primary btn-block" id="btn-salvar-motorista">Salvar motorista</button>
+  </div>
+</div>
+
+<!-- ============ MODAL: CLIENTE ============ -->
+<div class="modal-backdrop" id="modal-cliente">
+  <div class="modal"><div class="modal-header"><h3 id="modal-cliente-title">Cadastrar cliente</h3><button class="modal-close" data-close="modal-cliente"><i class="fa-solid fa-xmark"></i></button></div>
+    <div class="field"><label>Nome da empresa</label><input type="text" id="cli-nome"></div>
+    <div class="field"><label>CNPJ</label><input type="text" id="cli-cnpj" placeholder="00.000.000/0001-00"></div>
+    <div class="field"><label>Endereço</label><input type="text" id="cli-endereco"></div>
+    <div class="field-row"><div class="field"><label>Cidade</label><input type="text" id="cli-cidade"></div><div class="field"><label>Estado</label><input type="text" id="cli-estado" maxlength="2" placeholder="UF"></div></div>
+    <div class="field-row"><div class="field"><label>Telefone</label><input type="text" id="cli-telefone"></div><div class="field"><label>Responsável</label><input type="text" id="cli-responsavel"></div></div>
+    <button class="btn btn-primary btn-block" id="btn-salvar-cliente">Salvar cliente</button>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script>
+/* =========================================================
+   FIREBASE CONFIG — substitua pelos dados do seu projeto
+   ========================================================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyBysXPCsKozn7nEwJ7TVzHCMarDoQbjA6A", authDomain: "entrega-certa-b54ae.firebaseapp.com", projectId: "entrega-certa-b54ae",
+  storageBucket: "entrega-certa-b54ae.firebasestorage.app", messagingSenderId: "528945535586", appId: "1:528945535586:web:265b8701f7a8ba81cecf3b"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+const storage = firebase.storage();
+
+/* =========================================================
+   STATE
+   ========================================================= */
+let currentUser = null;
+let currentProfile = null; // { role:'admin'|'motorista', empresaId, nome, ... }
+let entregasCache = [];
+let motoristasCache = [];
+let clientesCache = [];
+let listenersAttached = false;
+let cardFilterAtivo = 'todas';
+let editandoEntregaId = null;
+let editandoMotoristaId = null;
+let editandoClienteId = null;
+let fotoCanhotoBase64 = null;
+let fotoMercadoriaBase64 = null;
+let assinaturaBase64 = null;
+let mobTab = 'pendentes';
+let entregaAtivaId = null;
+let wizardStep = 1;
+const TOTAL_STEPS = 4;
+
+/* =========================================================
+   MODO DEMONSTRAÇÃO
+   ========================================================= */
+let DEMO_MODE = false;
+let demoIdSeq = 900;
+function fakeTs(date){ return { toDate: () => date }; }
+function diasAtras(n,h){ const d=new Date(); d.setDate(d.getDate()-n); if(h!==undefined) d.setHours(h,0,0,0); return d; }
+
+let demoDB = {
+  empresa: { nome:'Transportadora Rápida Ltda (Demo)', cnpj:'12.345.678/0001-90', endereco:'Av. Industrial, 1200', email:'contato@rapida.com.br', telefone:'(11) 4000-1000', logo:null },
+  motoristas: [
+    { id:'mo1', nome:'João Pereira', cpf:'123.456.789-00', rg:'22.333.444-5', telefone:'(11) 98888-1111', email:'joao@rapida.com.br', placa:'ABC-1D23', modelo:'Fiorino', status:'ativo' },
+    { id:'mo2', nome:'Marcos Andrade', cpf:'987.654.321-00', rg:'11.222.333-4', telefone:'(11) 97777-2222', email:'marcos@rapida.com.br', placa:'XYZ-2E45', modelo:'HR Bongo', status:'ativo' }
+  ],
+  clientes: [
+    { id:'cl1', nome:'Mercado Bom Preço', cnpj:'11.111.111/0001-11', endereco:'Rua das Flores, 45', cidade:'São Paulo', estado:'SP', telefone:'(11) 3333-1111', responsavel:'Patrícia Nunes' },
+    { id:'cl2', nome:'Farmácia Vida', cnpj:'22.222.222/0001-22', endereco:'Av. Central, 900', cidade:'Guarulhos', estado:'SP', telefone:'(11) 3333-2222', responsavel:'Roberto Dias' },
+    { id:'cl3', nome:'Construtora Alicerce', cnpj:'33.333.333/0001-33', endereco:'Rod. dos Bandeirantes, km 12', cidade:'Osasco', estado:'SP', telefone:'(11) 3333-3333', responsavel:'Juliana Prado' }
+  ],
+  entregas: [],
+  logs: []
+};
+(function seedEntregas(){
+  const statusCiclo = ['entregue','entregue','entregue','em_rota','aguardando','nao_entregue','problema','entregue','aguardando','entregue'];
+  const clientesArr = demoDB.clientes; const motoristasArr = demoDB.motoristas;
+  for(let i=0;i<18;i++){
+    const cli = clientesArr[i % clientesArr.length];
+    const mot = motoristasArr[i % motoristasArr.length];
+    const status = statusCiclo[i % statusCiclo.length];
+    const diaEntrada = 12 - i;
+    const entregue = status === 'entregue';
+    demoDB.entregas.push({
+      id:'en'+(i+1), notaFiscal: String(100000+i), serie:'1',
+      clienteId: cli.id, clienteNome: cli.nome, clienteEndereco: cli.endereco, clienteCidade: cli.cidade, clienteTelefone: cli.telefone,
+      motoristaId: mot.id, motoristaNome: mot.nome,
+      status, observacoes:'',
+      dataAgendada: fakeTs(diasAtras(Math.max(diaEntrada,0), 8)),
+      canhotoFotoUrl:null, mercadoriaFotoUrl:null, assinaturaUrl:null,
+      recebedorNome: entregue ? 'Recebedor Exemplo' : null, recebedorDocumento: entregue ? '123.456.789-00' : null, recebedorCargo: entregue ? 'Recepcionista' : null, recebedorTelefone:null,
+      dataFinalizacao: entregue ? fakeTs(diasAtras(Math.max(diaEntrada,0), 14)) : null,
+      dispositivo: entregue ? 'Android · Chrome Mobile' : null,
+      geo: entregue ? { lat:-23.55, lng:-46.63 } : null,
+      timeline:[{ status:'aguardando', data: fakeTs(diasAtras(Math.max(diaEntrada,0),8)) }].concat(entregue ? [{status:'entregue', data: fakeTs(diasAtras(Math.max(diaEntrada,0),14))}] : [])
+    });
+  }
+})();
+const demoProfiles = {
+  admin: { uid:'demo-admin', role:'admin', nome:'Ricardo Almeida (Admin)', email:'admin@demo.com' },
+  motorista: { uid:'mo1', role:'motorista', nome:'João Pereira', email:'joao@rapida.com.br' }
+};
+
+function toast(msg, type){
+  const wrap = document.getElementById('toast-wrap');
+  const el = document.createElement('div');
+  el.className = 'toast' + (type==='err' ? ' err' : type==='ok' ? ' ok' : '');
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(()=>el.remove(), 4200);
+}
+function openModal(id){ document.getElementById(id).classList.add('open'); }
+function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', ()=>closeModal(b.dataset.close)));
+document.querySelectorAll('.modal-backdrop').forEach(m=>m.addEventListener('click', (e)=>{ if(e.target===m) closeModal(m.id); }));
+
+function fmtData(ts){ if(!ts) return '—'; const d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleDateString('pt-BR'); }
+function fmtHora(ts){ if(!ts) return '—'; const d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+function fmtDataHora(ts){ if(!ts) return '—'; return fmtData(ts) + ' às ' + fmtHora(ts); }
+function iniciais(nome){ if(!nome) return '?'; const p = nome.trim().split(' '); return (p[0][0] + (p[1]?p[1][0]:'')).toUpperCase(); }
+function fileToBase64(file){ return new Promise((res,rej)=>{ const r = new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); }
+function statusLabel(s){ return {aguardando:'Aguardando', em_rota:'Em rota', entregue:'Entregue', nao_entregue:'Não entregue', problema:'Problema na entrega'}[s] || s; }
+function addLog(msg){
+  const entry = { msg, data: new Date() };
+  if(DEMO_MODE){ demoDB.logs.unshift(entry); renderLogs(); }
+  else{ db.collection('logs').add({ msg, empresaId: currentProfile.empresaId||null, criadoEm: firebase.firestore.FieldValue.serverTimestamp() }).catch(()=>{}); }
+}
+function renderLogs(){
+  const el = document.getElementById('lista-logs');
+  if(!el) return;
+  const logs = DEMO_MODE ? demoDB.logs : [];
+  el.innerHTML = logs.length ? logs.slice(0,30).map(l=>`<li><span>${l.msg}</span><span style="color:var(--text-faint); font-size:11px;">${fmtDataHora(fakeTs(l.data))}</span></li>`).join('') : '<li style="color:var(--text-faint);">Nenhum registro ainda.</li>';
+}
+
+/* =========================================================
+   AUTH FLOW
+   ========================================================= */
+document.getElementById('demo-admin').addEventListener('click', ()=>enterDemoMode('admin'));
+document.getElementById('demo-motorista').addEventListener('click', ()=>enterDemoMode('motorista'));
+document.getElementById('link-to-login').addEventListener('click', ()=>{ document.getElementById('auth-demo-block').classList.add('hidden'); document.getElementById('auth-login-block').classList.remove('hidden'); });
+document.getElementById('link-to-demo').addEventListener('click', ()=>{ document.getElementById('auth-login-block').classList.add('hidden'); document.getElementById('auth-demo-block').classList.remove('hidden'); });
+
+function enterDemoMode(role){
+  DEMO_MODE = true;
+  currentUser = { uid: demoProfiles[role].uid, email: demoProfiles[role].email };
+  currentProfile = { id: demoProfiles[role].uid, ...demoProfiles[role] };
+  document.getElementById('loading').style.display='none';
+  document.getElementById('auth-screen').style.display='none';
+  listenersAttached = false;
+  routeByRole();
+  toast('Modo demonstração ativo — dados de exemplo carregados.', 'ok');
+}
+
+document.getElementById('btn-login').addEventListener('click', async ()=>{
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-password').value;
+  const errBox = document.getElementById('auth-error'); errBox.style.display='none';
+  if(!email || !pass){ errBox.textContent='Preencha e-mail e senha.'; errBox.style.display='block'; return; }
+  try{ await auth.signInWithEmailAndPassword(email, pass); }
+  catch(e){ errBox.textContent = traduzErroAuth(e); errBox.style.display='block'; }
+});
+function traduzErroAuth(e){
+  const map = { 'auth/invalid-email':'E-mail inválido.', 'auth/user-not-found':'Usuário não encontrado.', 'auth/wrong-password':'Senha incorreta.', 'auth/invalid-credential':'E-mail ou senha incorretos.', 'auth/too-many-requests':'Muitas tentativas. Tente mais tarde.', 'auth/email-already-in-use':'Este e-mail já tem uma conta. Use "Entrar".', 'auth/weak-password':'A senha precisa ter pelo menos 6 caracteres.' };
+  return map[e.code] || ('Erro: ' + e.message);
+}
+document.getElementById('link-forgot').addEventListener('click', ()=>{ document.getElementById('auth-login-block').classList.add('hidden'); document.getElementById('auth-forgot-block').classList.remove('hidden'); });
+document.getElementById('link-back-login').addEventListener('click', ()=>{ document.getElementById('auth-forgot-block').classList.add('hidden'); document.getElementById('auth-login-block').classList.remove('hidden'); });
+
+document.getElementById('btn-forgot').addEventListener('click', async ()=>{
+  const email = document.getElementById('forgot-email').value.trim();
+  const errBox = document.getElementById('forgot-error'); const okBox = document.getElementById('forgot-success');
+  errBox.style.display='none'; okBox.style.display='none';
+  if(!email){ errBox.textContent='Informe um e-mail.'; errBox.style.display='block'; return; }
+  try{ await auth.sendPasswordResetEmail(email); okBox.textContent='Link enviado! Verifique seu e-mail.'; okBox.style.display='block'; }
+  catch(e){ errBox.textContent = traduzErroAuth(e); errBox.style.display='block'; }
+});
+
+function doLogout(){
+  if(DEMO_MODE){
+    DEMO_MODE=false; currentUser=null; currentProfile=null; listenersAttached=false;
+    document.getElementById('admin-app').style.display='none';
+    document.getElementById('mobile-app').style.display='none';
+    document.getElementById('auth-screen').style.display='flex';
+    document.getElementById('auth-login-block').classList.add('hidden');
+    document.getElementById('auth-demo-block').classList.remove('hidden');
+    return;
+  }
+  auth.signOut();
+}
+document.getElementById('btn-logout-admin').addEventListener('click', doLogout);
+document.getElementById('btn-logout-mobile').addEventListener('click', doLogout);
+
+auth.onAuthStateChanged(async (user)=>{
+  document.getElementById('loading').style.display='none';
+  if(!user){
+    if(DEMO_MODE) return;
+    currentUser=null; currentProfile=null;
+    document.getElementById('auth-screen').style.display='flex';
+    document.getElementById('admin-app').style.display='none';
+    document.getElementById('mobile-app').style.display='none';
+    return;
+  }
+  currentUser = user;
+  try{
+    const doc = await db.collection('usuarios').doc(user.uid).get();
+    if(!doc.exists){ toast('Perfil não encontrado.', 'err'); await auth.signOut(); return; }
+    currentProfile = { id: doc.id, ...doc.data() };
+    document.getElementById('auth-screen').style.display='none';
+    routeByRole();
+  }catch(e){ toast('Erro ao carregar perfil: '+e.message, 'err'); }
+});
+
+const APP_MODE = 'motorista'; // este arquivo é o app do entregador (PWA mobile)
+
+function routeByRole(){
+  if(APP_MODE==='motorista' && currentProfile.role!=='motorista'){
+    document.getElementById('admin-app').style.display='none';
+    document.getElementById('mobile-app').style.display='none';
+    document.getElementById('restricted-text').textContent = 'Este endereço é exclusivo para motoristas. Use o link do painel administrativo para acessar com este usuário.';
+    document.getElementById('restricted-screen').style.display='flex';
+    return;
+  }
+  if(currentProfile.role === 'admin'){
+    document.getElementById('admin-app').style.display='block';
+    document.getElementById('mobile-app').style.display='none';
+    initAdminApp();
+  }else{
+    document.getElementById('admin-app').style.display='none';
+    document.getElementById('mobile-app').style.display='flex';
+    initMobileApp();
+  }
+}
+document.getElementById('btn-restricted-logout').addEventListener('click', ()=>{
+  document.getElementById('restricted-screen').style.display='none';
+  doLogout();
+});
+
+/* =========================================================
+   NAV (admin)
+   ========================================================= */
+document.querySelectorAll('.nav-item').forEach(item=>{
+  item.addEventListener('click', ()=>{
+    document.querySelectorAll('.nav-item').forEach(i=>i.classList.remove('active'));
+    item.classList.add('active');
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    document.getElementById(item.dataset.view).classList.add('active');
+    document.getElementById('sidebar').classList.remove('open');
+    if(item.dataset.view==='v-dashboard') renderDashboard();
+    if(item.dataset.view==='v-config') { loadConfig(); }
+  });
+});
+document.getElementById('btn-open-sidebar').addEventListener('click', ()=>document.getElementById('sidebar').classList.toggle('open'));
+document.getElementById('btn-collapse-sidebar').addEventListener('click', ()=>{
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  const icon = document.querySelector('#btn-collapse-sidebar i');
+  icon.className = sb.classList.contains('collapsed') ? 'fa-solid fa-chevron-right' : 'fa-solid fa-chevron-left';
+});
+
+/* =========================================================
+   ADMIN INIT + DATA LISTENERS
+   ========================================================= */
+function initAdminApp(){
+  document.getElementById('admin-name').textContent = currentProfile.nome || currentUser.email;
+  document.getElementById('admin-avatar').textContent = iniciais(currentProfile.nome || currentUser.email);
+  if(!listenersAttached){ attachRealtimeListeners(); listenersAttached = true; }
+  loadConfig();
+}
+
+function refreshDemoCaches(){
+  entregasCache = [...demoDB.entregas];
+  motoristasCache = [...demoDB.motoristas];
+  clientesCache = [...demoDB.clientes];
+  renderAllAdminViews();
+  renderMobileHome();
+}
+function renderAllAdminViews(){
+  populateSelects();
+  renderEntregas();
+  renderMotoristas();
+  renderClientes();
+  if(document.getElementById('v-dashboard') && document.getElementById('v-dashboard').classList.contains('active')) renderDashboard();
+}
+
+function attachRealtimeListeners(){
+  if(DEMO_MODE){ refreshDemoCaches(); return; }
+  db.collection('entregas').orderBy('dataAgendada','desc').onSnapshot(snap=>{
+    entregasCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderAllAdminViews(); renderMobileHome();
+  }, err=>console.error(err));
+  db.collection('motoristas').orderBy('nome').onSnapshot(snap=>{
+    motoristasCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderMotoristas(); populateSelects();
+  }, err=>console.error(err));
+  db.collection('clientes').orderBy('nome').onSnapshot(snap=>{
+    clientesCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderClientes(); populateSelects();
+  }, err=>console.error(err));
+}
+
+function populateSelects(){
+  const optsMot = motoristasCache.map(m=>`<option value="${m.id}">${m.nome}</option>`).join('');
+  const optsCli = clientesCache.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
+  document.getElementById('ent-motorista').innerHTML = optsMot;
+  document.getElementById('ent-cliente').innerHTML = optsCli;
+  document.getElementById('filtro-motorista-entrega').innerHTML = '<option value="">Todos os motoristas</option>' + optsMot;
+  document.getElementById('filtro-cliente-entrega').innerHTML = '<option value="">Todos os clientes</option>' + optsCli;
+}
+
+/* ---- ENTREGAS ---- */
+function entregasFiltradas(){
+  let list = [...entregasCache];
+  const busca = (document.getElementById('busca-entrega').value||'').toLowerCase().trim();
+  const status = document.getElementById('filtro-status-entrega').value;
+  const motoristaId = document.getElementById('filtro-motorista-entrega').value;
+  const clienteId = document.getElementById('filtro-cliente-entrega').value;
+  const data = document.getElementById('filtro-data-entrega').value;
+  if(busca) list = list.filter(e=> (e.notaFiscal||'').toLowerCase().includes(busca) || (e.clienteNome||'').toLowerCase().includes(busca) || (e.motoristaNome||'').toLowerCase().includes(busca));
+  if(status) list = list.filter(e=>e.status===status);
+  if(motoristaId) list = list.filter(e=>e.motoristaId===motoristaId);
+  if(clienteId) list = list.filter(e=>e.clienteId===clienteId);
+  if(data){ const d = new Date(data); list = list.filter(e=> e.dataAgendada && e.dataAgendada.toDate().toDateString()===d.toDateString()); }
+  return list;
+}
+function renderEntregas(){
+  const list = entregasFiltradas();
+  const tbody = document.getElementById('tbl-entregas');
+  const empty = document.getElementById('empty-entregas');
+  tbody.innerHTML=''; empty.classList.toggle('hidden', list.length>0);
+  list.forEach(e=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><span style="font-family:var(--mono); font-size:12px;">${e.notaFiscal}</span></td>
+      <td>${e.clienteNome||'—'}</td>
+      <td>${e.motoristaNome||'—'}</td>
+      <td><span class="badge badge-${e.status}">${statusLabel(e.status)}</span></td>
+      <td>${fmtData(e.dataFinalizacao||e.dataAgendada)}</td>
+      <td>${e.dataFinalizacao ? fmtHora(e.dataFinalizacao) : '—'}</td>
+      <td>${e.recebedorNome||'—'}</td>
+      <td>${e.assinaturaUrl ? `<img class="thumb-sm" src="${e.assinaturaUrl}">` : '—'}</td>
+      <td><button class="btn btn-ghost btn-sm" data-id="${e.id}">Ver</button></td>
+    `;
+    tr.querySelector('button').addEventListener('click', ()=>abrirDetalheEntrega(e.id));
+    tbody.appendChild(tr);
+  });
+}
+['busca-entrega','filtro-status-entrega','filtro-motorista-entrega','filtro-cliente-entrega','filtro-data-entrega'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', renderEntregas);
+  document.getElementById(id).addEventListener('change', renderEntregas);
+});
+document.getElementById('btn-limpar-filtros-entrega').addEventListener('click', ()=>{
+  document.getElementById('busca-entrega').value='';
+  document.getElementById('filtro-status-entrega').value='';
+  document.getElementById('filtro-motorista-entrega').value='';
+  document.getElementById('filtro-cliente-entrega').value='';
+  document.getElementById('filtro-data-entrega').value='';
+  renderEntregas();
+});
+
+document.getElementById('btn-nova-entrega').addEventListener('click', ()=>{
+  editandoEntregaId = null;
+  document.getElementById('modal-entrega-title').textContent='Nova entrega';
+  ['ent-nf','ent-serie','ent-obs'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('ent-data').value = new Date().toISOString().slice(0,10);
+  document.getElementById('ent-status').value='aguardando';
+  openModal('modal-entrega');
+});
+document.getElementById('btn-salvar-entrega').addEventListener('click', async ()=>{
+  const nf = document.getElementById('ent-nf').value.trim();
+  const serie = document.getElementById('ent-serie').value.trim();
+  const clienteId = document.getElementById('ent-cliente').value;
+  const motoristaId = document.getElementById('ent-motorista').value;
+  const data = document.getElementById('ent-data').value;
+  const status = document.getElementById('ent-status').value;
+  const obs = document.getElementById('ent-obs').value.trim();
+  if(!nf || !clienteId || !motoristaId){ toast('Preencha nota fiscal, cliente e motorista.', 'err'); return; }
+  const cliente = clientesCache.find(c=>c.id===clienteId);
+  const motorista = motoristasCache.find(m=>m.id===motoristaId);
+
+  const payload = {
+    notaFiscal:nf, serie:serie||'1', clienteId, clienteNome:cliente?.nome, clienteEndereco:cliente?.endereco, clienteCidade:cliente?.cidade, clienteTelefone:cliente?.telefone,
+    motoristaId, motoristaNome:motorista?.nome, status, observacoes:obs||''
+  };
+  try{
+    if(DEMO_MODE){
+      payload.dataAgendada = fakeTs(data ? new Date(data) : new Date());
+      payload.id = 'en'+(demoIdSeq++);
+      payload.timeline = [{status:'aguardando', data: fakeTs(new Date())}];
+      demoDB.entregas.unshift(payload);
+      refreshDemoCaches();
+      addLog(`Nova entrega NF ${nf} cadastrada para ${motorista?.nome}.`);
+      toast('Entrega cadastrada! (demo)', 'ok');
+      closeModal('modal-entrega');
+      return;
+    }
+    payload.dataAgendada = firebase.firestore.FieldValue.serverTimestamp();
+    payload.timeline = [{status:'aguardando', data: new Date()}];
+    await db.collection('entregas').add(payload);
+    addLog(`Nova entrega NF ${nf} cadastrada para ${motorista?.nome}.`);
+    toast('Entrega cadastrada!', 'ok');
+    closeModal('modal-entrega');
+  }catch(e){ toast('Erro: '+e.message, 'err'); }
+});
+
+document.getElementById('input-planilha-entregas').addEventListener('change', async (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  try{
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data);
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    if(!rows.length){ toast('Planilha vazia.', 'err'); return; }
+    let count=0;
+    rows.forEach(row=>{
+      const nf = row.nf || row.NF || row.nota || row.Nota;
+      const clienteNome = row.cliente || row.Cliente;
+      const motoristaNome = row.motorista || row.Motorista;
+      if(!nf || !clienteNome) return;
+      const cliente = clientesCache.find(c=> c.nome.toLowerCase() === String(clienteNome).toLowerCase());
+      const motorista = motoristasCache.find(m=> m.nome.toLowerCase() === String(motoristaNome||'').toLowerCase());
+      const novaEntrega = {
+        notaFiscal:String(nf), serie:'1', clienteId: cliente?.id||null, clienteNome: cliente?.nome||clienteNome,
+        motoristaId: motorista?.id||null, motoristaNome: motorista?.nome||motoristaNome||'—',
+        status:'aguardando', observacoes:'', dataAgendada: fakeTs(new Date()), timeline:[{status:'aguardando', data:fakeTs(new Date())}]
+      };
+      if(DEMO_MODE){ novaEntrega.id='en'+(demoIdSeq++); demoDB.entregas.unshift(novaEntrega); count++; }
+      count++;
+    });
+    if(DEMO_MODE) refreshDemoCaches();
+    toast(`${count} entrega(s) importada(s) com sucesso!`, 'ok');
+  }catch(err){ toast('Erro ao ler planilha. Use colunas: nf, cliente, motorista.', 'err'); }
+  e.target.value='';
+});
+
+function abrirDetalheEntrega(id){
+  const e = entregasCache.find(x=>x.id===id); if(!e) return;
+  const body = document.getElementById('detalhe-entrega-body');
+  body.innerHTML = `
+    <div class="detail-grid">
+      <div class="detail-item"><div class="l">Nota Fiscal</div><div class="v">${e.notaFiscal} / série ${e.serie}</div></div>
+      <div class="detail-item"><div class="l">Status</div><div class="v"><span class="badge badge-${e.status}">${statusLabel(e.status)}</span></div></div>
+      <div class="detail-item"><div class="l">Cliente</div><div class="v">${e.clienteNome||'—'}</div></div>
+      <div class="detail-item"><div class="l">Motorista</div><div class="v">${e.motoristaNome||'—'}</div></div>
+      <div class="detail-item"><div class="l">Recebedor</div><div class="v">${e.recebedorNome||'—'} ${e.recebedorCargo?('· '+e.recebedorCargo):''}</div></div>
+      <div class="detail-item"><div class="l">Documento</div><div class="v">${e.recebedorDocumento||'—'}</div></div>
+      <div class="detail-item"><div class="l">Data/hora finalização</div><div class="v">${e.dataFinalizacao ? fmtDataHora(e.dataFinalizacao) : '—'}</div></div>
+      <div class="detail-item"><div class="l">Dispositivo</div><div class="v">${e.dispositivo||'—'}</div></div>
+    </div>
+    ${e.observacoes ? `<div class="detail-item" style="margin-top:10px;"><div class="l">Observações</div><div class="v" style="font-weight:400;">${e.observacoes}</div></div>` : ''}
+    ${e.motivoNaoEntrega ? `<div class="detail-item" style="margin-top:10px; border:1px solid #F8C9C9; background:var(--danger-dim);"><div class="l" style="color:var(--danger);">Motivo da não entrega</div><div class="v">${e.motivoNaoEntrega}</div></div>` : ''}
+    <div class="detail-photos">
+      ${e.canhotoFotoUrl ? `<img src="${e.canhotoFotoUrl}">` : (e.status!=='nao_entregue' ? `<div class="detail-item" style="display:flex;align-items:center;justify-content:center;height:140px;color:var(--text-faint);">Sem foto do canhoto</div>` : '')}
+      ${e.mercadoriaFotoUrl ? `<img src="${e.mercadoriaFotoUrl}">` : (e.status!=='nao_entregue' ? `<div class="detail-item" style="display:flex;align-items:center;justify-content:center;height:140px;color:var(--text-faint);">Sem foto da mercadoria</div>` : '')}
+      ${e.fotoFachadaUrl ? `<img src="${e.fotoFachadaUrl}">` : ''}
+    </div>
+    ${e.assinaturaUrl ? `<div class="detail-item"><div class="l">Assinatura digital</div><img src="${e.assinaturaUrl}" style="width:100%; max-height:120px; object-fit:contain; background:#fff; margin-top:6px; border-radius:8px;"></div>` : ''}
+    ${e.geo ? `<div class="detail-item" style="margin-top:10px;"><div class="l">Localização registrada</div><div class="v" style="font-weight:400;">Lat ${e.geo.lat?.toFixed?.(4)||e.geo.lat}, Lng ${e.geo.lng?.toFixed?.(4)||e.geo.lng}</div></div>` : ''}
+    <div class="l" style="margin-top:16px; margin-bottom:4px;">Linha do tempo</div>
+    <ul class="timeline">${(e.timeline||[]).map(t=>`<li><span class="t-time">${fmtDataHora(t.data)}</span><span>${statusLabel(t.status)}</span></li>`).join('') || '<li>Sem histórico.</li>'}</ul>
+  `;
+  openModal('modal-detalhe-entrega');
+}
+
+/* ---- DASHBOARD ---- */
+function periodoPresetToRange(preset){
+  const fimHoje = new Date(); fimHoje.setHours(23,59,59,999);
+  const inicioHoje = new Date(); inicioHoje.setHours(0,0,0,0);
+  if(preset==='hoje') return { ini: inicioHoje, fim: fimHoje, label: 'Hoje · ' + inicioHoje.toLocaleDateString('pt-BR') };
+  if(preset==='7dias'){ const ini = new Date(); ini.setDate(ini.getDate()-6); ini.setHours(0,0,0,0); return { ini, fim: fimHoje, label: `${ini.toLocaleDateString('pt-BR')} – ${fimHoje.toLocaleDateString('pt-BR')}` }; }
+  if(preset==='mes'){ const ini = new Date(fimHoje.getFullYear(), fimHoje.getMonth(), 1); return { ini, fim: fimHoje, label: ini.toLocaleDateString('pt-BR',{month:'long',year:'numeric'}) }; }
+  if(preset==='personalizado'){
+    const iniVal = document.getElementById('periodo-data-ini').value;
+    const fimVal = document.getElementById('periodo-data-fim').value;
+    const ini = iniVal ? new Date(iniVal+'T00:00:00') : inicioHoje;
+    const fim = fimVal ? new Date(fimVal+'T23:59:59') : fimHoje;
+    return { ini, fim, label: `${ini.toLocaleDateString('pt-BR')} – ${fim.toLocaleDateString('pt-BR')}` };
+  }
+  // 30dias (padrão)
+  const ini = new Date(); ini.setDate(ini.getDate()-29); ini.setHours(0,0,0,0);
+  return { ini, fim: fimHoje, label: `${ini.toLocaleDateString('pt-BR')} – ${fimHoje.toLocaleDateString('pt-BR')}` };
+}
+document.getElementById('periodo-preset').addEventListener('change', ()=>{
+  const custom = document.getElementById('periodo-preset').value === 'personalizado';
+  document.getElementById('periodo-data-ini').classList.toggle('hidden', !custom);
+  document.getElementById('periodo-data-fim').classList.toggle('hidden', !custom);
+  document.getElementById('btn-aplicar-periodo').classList.toggle('hidden', !custom);
+  if(!custom) renderDashboard();
+});
+document.getElementById('btn-aplicar-periodo').addEventListener('click', renderDashboard);
+
+document.querySelectorAll('.kpi-card').forEach(card=>{
+  card.addEventListener('click', ()=>{
+    cardFilterAtivo = card.dataset.filter;
+    document.querySelectorAll('.kpi-card').forEach(c=> c.classList.toggle('selected', c.dataset.filter===cardFilterAtivo));
+    renderDashboard();
+  });
+});
+
+function renderDashboard(){
+  const range = periodoPresetToRange(document.getElementById('periodo-preset').value);
+  document.getElementById('period-label-text').textContent = range.label;
+  const list = entregasCache.filter(e=> e.dataAgendada && e.dataAgendada.toDate() >= range.ini && e.dataAgendada.toDate() <= range.fim);
+
+  const total = list.length;
+  const entreguesPeriodo = list.filter(e=> e.status==='entregue').length;
+  const pendentes = list.filter(e=> e.status==='aguardando' || e.status==='em_rota').length;
+  const naoEntregues = list.filter(e=>e.status==='nao_entregue' || e.status==='problema').length;
+  const pct = n => total ? Math.round((n/total)*100) : 0;
+
+  document.getElementById('kpi-total').textContent = total;
+  document.getElementById('kpi-hoje').textContent = entreguesPeriodo;
+  document.getElementById('kpi-pendentes').textContent = pendentes;
+  document.getElementById('kpi-pct-entregue').textContent = pct(entreguesPeriodo)+'%';
+  document.getElementById('kpi-pct-pendente').textContent = pct(pendentes)+'%';
+  document.getElementById('kpi-pct-nao').textContent = pct(naoEntregues)+'%';
+
+  // ranking motoristas (dentro do período)
+  const contMot = {};
+  list.forEach(e=>{ if(e.status==='entregue'){ contMot[e.motoristaNome] = (contMot[e.motoristaNome]||0)+1; } });
+  const rankMot = Object.entries(contMot).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  document.getElementById('ranking-motoristas').innerHTML = rankMot.length ? rankMot.map((r,i)=>`<li><span class="rk"><span class="rank-badge">${i+1}</span>${r[0]}</span><b>${r[1]}</b></li>`).join('') : '<li style="color:var(--text-faint);">Sem dados no período</li>';
+
+  // lista de entregas filtrada pelo card selecionado (dentro do período)
+  let filtradas = list;
+  let tituloFiltro = 'Todas as entregas do período';
+  if(cardFilterAtivo==='entregue'){ filtradas = list.filter(e=>e.status==='entregue'); tituloFiltro='Entregues no período'; }
+  else if(cardFilterAtivo==='pendente'){ filtradas = list.filter(e=> e.status==='aguardando' || e.status==='em_rota'); tituloFiltro='Pendentes no período'; }
+  else if(cardFilterAtivo==='nao_entregue'){ filtradas = list.filter(e=> e.status==='nao_entregue' || e.status==='problema'); tituloFiltro='Não entregues no período'; }
+  filtradas = [...filtradas].sort((a,b)=> (b.dataFinalizacao?.toDate()||b.dataAgendada?.toDate()||0) - (a.dataFinalizacao?.toDate()||a.dataAgendada?.toDate()||0));
+
+  document.getElementById('lista-entregas-titulo').textContent = tituloFiltro;
+  document.getElementById('lista-entregas-count').textContent = filtradas.length;
+  document.getElementById('tbl-ultimas').innerHTML = filtradas.length ? filtradas.map(e=>`<tr><td style="font-family:var(--mono);font-size:12px;">${e.notaFiscal}</td><td>${e.clienteNome}</td><td>${e.motoristaNome}</td><td><span class="badge badge-${e.status}">${statusLabel(e.status)}</span></td><td>${fmtData(e.dataFinalizacao||e.dataAgendada)}</td></tr>`).join('') : `<tr><td colspan="5" style="text-align:center; color:var(--text-faint);">Sem entregas para este filtro no período</td></tr>`;
+}
+
+/* ---- MOTORISTAS ---- */
+function renderMotoristas(){
+  const busca = (document.getElementById('busca-motorista').value||'').toLowerCase().trim();
+  let list = [...motoristasCache];
+  if(busca) list = list.filter(m=> (m.nome||'').toLowerCase().includes(busca) || (m.cpf||'').includes(busca) || (m.placa||'').toLowerCase().includes(busca));
+  const tbody = document.getElementById('tbl-motoristas'); const empty = document.getElementById('empty-motoristas');
+  tbody.innerHTML=''; empty.classList.toggle('hidden', list.length>0);
+  list.forEach(m=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${m.nome}</td><td>${m.cpf||'—'}</td><td>${m.telefone||'—'}</td><td>${m.modelo||'—'}</td><td>${m.placa||'—'}</td><td><span class="badge badge-${m.status}">${m.status==='ativo'?'Ativo':'Inativo'}</span></td>
+      <td style="white-space:nowrap;"><button class="btn btn-ghost btn-sm" data-act="edit" data-id="${m.id}"><i class="fa-solid fa-pen"></i></button> <button class="btn btn-ghost btn-sm" data-act="del" data-id="${m.id}"><i class="fa-solid fa-trash"></i></button></td>`;
+    tr.querySelectorAll('button').forEach(b=>{
+      b.addEventListener('click', async ()=>{
+        if(b.dataset.act==='edit') abrirEdicaoMotorista(m.id);
+        else{
+          if(confirm('Remover este motorista?')){
+            if(DEMO_MODE){ demoDB.motoristas = demoDB.motoristas.filter(x=>x.id!==m.id); refreshDemoCaches(); toast('Motorista removido. (demo)','ok'); }
+            else{ await db.collection('motoristas').doc(m.id).delete(); toast('Motorista removido.','ok'); }
+          }
+        }
+      });
+    });
+    tbody.appendChild(tr);
+  });
+}
+document.getElementById('busca-motorista').addEventListener('input', renderMotoristas);
+document.getElementById('btn-novo-motorista').addEventListener('click', ()=>{
+  editandoMotoristaId = null;
+  document.getElementById('modal-motorista-title').textContent='Cadastrar motorista';
+  ['mot-nome','mot-cpf','mot-rg','mot-telefone','mot-email','mot-senha','mot-placa','mot-modelo'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('mot-status').value='ativo';
+  openModal('modal-motorista');
+});
+function abrirEdicaoMotorista(id){
+  const m = motoristasCache.find(x=>x.id===id); if(!m) return;
+  editandoMotoristaId = id;
+  document.getElementById('modal-motorista-title').textContent='Editar motorista';
+  document.getElementById('mot-nome').value=m.nome||''; document.getElementById('mot-cpf').value=m.cpf||''; document.getElementById('mot-rg').value=m.rg||'';
+  document.getElementById('mot-telefone').value=m.telefone||''; document.getElementById('mot-email').value=m.email||''; document.getElementById('mot-senha').value='';
+  document.getElementById('mot-placa').value=m.placa||''; document.getElementById('mot-modelo').value=m.modelo||''; document.getElementById('mot-status').value=m.status||'ativo';
+  openModal('modal-motorista');
+}
+document.getElementById('btn-salvar-motorista').addEventListener('click', async ()=>{
+  const nome = document.getElementById('mot-nome').value.trim();
+  const cpf = document.getElementById('mot-cpf').value.trim();
+  const rg = document.getElementById('mot-rg').value.trim();
+  const telefone = document.getElementById('mot-telefone').value.trim();
+  const email = document.getElementById('mot-email').value.trim();
+  const placa = document.getElementById('mot-placa').value.trim();
+  const modelo = document.getElementById('mot-modelo').value.trim();
+  const status = document.getElementById('mot-status').value;
+  if(!nome || !cpf){ toast('Informe nome e CPF.', 'err'); return; }
+  const payload = { nome, cpf, rg, telefone, email, placa, modelo, status };
+  try{
+    if(DEMO_MODE){
+      if(editandoMotoristaId){ const idx = demoDB.motoristas.findIndex(x=>x.id===editandoMotoristaId); demoDB.motoristas[idx] = {...demoDB.motoristas[idx], ...payload}; }
+      else{ demoDB.motoristas.push({ id:'mo'+(demoIdSeq++), ...payload }); }
+      refreshDemoCaches();
+      toast('Motorista salvo! (demo)', 'ok');
+      closeModal('modal-motorista');
+      return;
+    }
+    if(editandoMotoristaId) await db.collection('motoristas').doc(editandoMotoristaId).update(payload);
+    else await db.collection('motoristas').add(payload);
+    toast('Motorista salvo!', 'ok');
+    closeModal('modal-motorista');
+  }catch(e){ toast('Erro: '+e.message, 'err'); }
+});
+
+/* ---- CLIENTES ---- */
+function renderClientes(){
+  const busca = (document.getElementById('busca-cliente').value||'').toLowerCase().trim();
+  let list = [...clientesCache];
+  if(busca) list = list.filter(c=> (c.nome||'').toLowerCase().includes(busca) || (c.cnpj||'').includes(busca));
+  const tbody = document.getElementById('tbl-clientes'); const empty = document.getElementById('empty-clientes');
+  tbody.innerHTML=''; empty.classList.toggle('hidden', list.length>0);
+  list.forEach(c=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${c.nome}</td><td>${c.cnpj||'—'}</td><td>${c.cidade||'—'}${c.estado?('/'+c.estado):''}</td><td>${c.responsavel||'—'}</td><td>${c.telefone||'—'}</td>
+      <td style="white-space:nowrap;"><button class="btn btn-ghost btn-sm" data-act="edit" data-id="${c.id}"><i class="fa-solid fa-pen"></i></button> <button class="btn btn-ghost btn-sm" data-act="del" data-id="${c.id}"><i class="fa-solid fa-trash"></i></button></td>`;
+    tr.querySelectorAll('button').forEach(b=>{
+      b.addEventListener('click', async ()=>{
+        if(b.dataset.act==='edit') abrirEdicaoCliente(c.id);
+        else{
+          if(confirm('Remover este cliente?')){
+            if(DEMO_MODE){ demoDB.clientes = demoDB.clientes.filter(x=>x.id!==c.id); refreshDemoCaches(); toast('Cliente removido. (demo)','ok'); }
+            else{ await db.collection('clientes').doc(c.id).delete(); toast('Cliente removido.','ok'); }
+          }
+        }
+      });
+    });
+    tbody.appendChild(tr);
+  });
+}
+document.getElementById('busca-cliente').addEventListener('input', renderClientes);
+document.getElementById('btn-novo-cliente').addEventListener('click', ()=>{
+  editandoClienteId = null;
+  document.getElementById('modal-cliente-title').textContent='Cadastrar cliente';
+  ['cli-nome','cli-cnpj','cli-endereco','cli-cidade','cli-estado','cli-telefone','cli-responsavel'].forEach(id=>document.getElementById(id).value='');
+  openModal('modal-cliente');
+});
+function abrirEdicaoCliente(id){
+  const c = clientesCache.find(x=>x.id===id); if(!c) return;
+  editandoClienteId = id;
+  document.getElementById('modal-cliente-title').textContent='Editar cliente';
+  document.getElementById('cli-nome').value=c.nome||''; document.getElementById('cli-cnpj').value=c.cnpj||''; document.getElementById('cli-endereco').value=c.endereco||'';
+  document.getElementById('cli-cidade').value=c.cidade||''; document.getElementById('cli-estado').value=c.estado||''; document.getElementById('cli-telefone').value=c.telefone||''; document.getElementById('cli-responsavel').value=c.responsavel||'';
+  openModal('modal-cliente');
+}
+document.getElementById('btn-salvar-cliente').addEventListener('click', async ()=>{
+  const nome = document.getElementById('cli-nome').value.trim();
+  const cnpj = document.getElementById('cli-cnpj').value.trim();
+  const endereco = document.getElementById('cli-endereco').value.trim();
+  const cidade = document.getElementById('cli-cidade').value.trim();
+  const estado = document.getElementById('cli-estado').value.trim();
+  const telefone = document.getElementById('cli-telefone').value.trim();
+  const responsavel = document.getElementById('cli-responsavel').value.trim();
+  if(!nome){ toast('Informe o nome da empresa.', 'err'); return; }
+  const payload = { nome, cnpj, endereco, cidade, estado, telefone, responsavel };
+  try{
+    if(DEMO_MODE){
+      if(editandoClienteId){ const idx = demoDB.clientes.findIndex(x=>x.id===editandoClienteId); demoDB.clientes[idx] = {...demoDB.clientes[idx], ...payload}; }
+      else{ demoDB.clientes.push({ id:'cl'+(demoIdSeq++), ...payload }); }
+      refreshDemoCaches();
+      toast('Cliente salvo! (demo)', 'ok');
+      closeModal('modal-cliente');
+      return;
+    }
+    if(editandoClienteId) await db.collection('clientes').doc(editandoClienteId).update(payload);
+    else await db.collection('clientes').add(payload);
+    toast('Cliente salvo!', 'ok');
+    closeModal('modal-cliente');
+  }catch(e){ toast('Erro: '+e.message, 'err'); }
+});
+
+/* ---- CONFIGURAÇÕES ---- */
+async function loadConfig(){
+  try{
+    let d;
+    if(DEMO_MODE){ d = demoDB.empresa; }
+    else{ const doc = await db.collection('config').doc('geral').get(); if(!doc.exists) return; d = doc.data(); }
+    document.getElementById('cfg-nome').value = d.nome||'';
+    document.getElementById('cfg-cnpj').value = d.cnpj||'';
+    document.getElementById('cfg-endereco').value = d.endereco||'';
+    document.getElementById('cfg-email').value = d.email||'';
+    document.getElementById('cfg-telefone').value = d.telefone||'';
+    document.getElementById('empresa-sub').textContent = d.nome ? `${d.nome} · Visão geral das entregas` : 'Visão geral das entregas';
+    const logoEl = document.getElementById('cfg-logo-preview');
+    logoEl.innerHTML = d.logo ? `<img src="${d.logo}">` : `<i class="fa-solid fa-building"></i>`;
+  }catch(e){ console.error(e); }
+}
+let cfgLogoBase64 = null;
+document.getElementById('cfg-logo-input').addEventListener('change', async (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  cfgLogoBase64 = await fileToBase64(file);
+  document.getElementById('cfg-logo-preview').innerHTML = `<img src="${cfgLogoBase64}">`;
+});
+document.getElementById('btn-salvar-config').addEventListener('click', async ()=>{
+  const nome = document.getElementById('cfg-nome').value.trim();
+  const cnpj = document.getElementById('cfg-cnpj').value.trim();
+  const endereco = document.getElementById('cfg-endereco').value.trim();
+  const email = document.getElementById('cfg-email').value.trim();
+  const telefone = document.getElementById('cfg-telefone').value.trim();
+  try{
+    if(DEMO_MODE){
+      demoDB.empresa = { ...demoDB.empresa, nome, cnpj, endereco, email, telefone, logo: cfgLogoBase64 || demoDB.empresa.logo };
+      toast('Configurações salvas! (demo)', 'ok');
+      loadConfig();
+      return;
+    }
+    const payload = { nome, cnpj, endereco, email, telefone };
+    if(cfgLogoBase64){
+      const ref = storage.ref().child('config/logo.jpg');
+      await ref.putString(cfgLogoBase64, 'data_url');
+      payload.logo = await ref.getDownloadURL();
+    }
+    await db.collection('config').doc('geral').set(payload, {merge:true});
+    toast('Configurações salvas!', 'ok');
+    loadConfig();
+  }catch(e){ toast('Erro: '+e.message, 'err'); }
+});
+
+/* =========================================================
+   MOBILE PWA (motorista)
+   ========================================================= */
+function initMobileApp(){
+  document.getElementById('mob-greet').textContent = 'Olá, ' + (currentProfile.nome ? currentProfile.nome.split(' ')[0] : 'motorista') + '.';
+  if(!listenersAttached){ attachRealtimeListeners(); listenersAttached = true; }
+  showMobView('home');
+  renderMobileHome();
+}
+function showMobView(view){
+  document.getElementById('mob-view-home').style.display = view==='home' ? 'block' : 'none';
+  document.getElementById('mob-view-detalhe').style.display = view==='detalhe' ? 'block' : 'none';
+  document.getElementById('mob-view-wizard').style.display = view==='wizard' ? 'block' : 'none';
+  document.getElementById('mob-view-problema').style.display = view==='problema' ? 'block' : 'none';
+}
+document.querySelectorAll('.seg-tab').forEach(t=>{
+  t.addEventListener('click', ()=>{
+    document.querySelectorAll('.seg-tab').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    mobTab = t.dataset.tab;
+    renderMobileHome();
+  });
+});
+function minhasEntregas(){
+  if(!currentProfile || currentProfile.role!=='motorista') return [];
+  return entregasCache.filter(e=> e.motoristaId === currentProfile.uid || e.motoristaId === currentProfile.id);
+}
+function renderMobileHome(){
+  if(!currentProfile || currentProfile.role!=='motorista') return;
+  const minhas = minhasEntregas();
+  const pendentes = minhas.filter(e=> e.status==='aguardando' || e.status==='em_rota');
+  const entregues = minhas.filter(e=> e.status==='entregue' || e.status==='nao_entregue' || e.status==='problema');
+  document.getElementById('mob-count-pend').textContent = pendentes.length;
+  const list = mobTab==='pendentes' ? pendentes : entregues;
+  const listaEl = document.getElementById('mob-lista-entregas');
+  const emptyEl = document.getElementById('mob-empty');
+  listaEl.innerHTML=''; emptyEl.classList.toggle('hidden', list.length>0);
+  list.forEach(e=>{
+    const card = document.createElement('div');
+    card.className='delivery-card';
+    card.innerHTML = `
+      <div class="top-row">
+        <div><div class="cli">${e.clienteNome}</div><div class="nf">NF ${e.notaFiscal} / ${e.serie}</div></div>
+        <span class="badge badge-${e.status}">${statusLabel(e.status)}</span>
+      </div>
+      <div class="addr"><i class="fa-solid fa-location-dot"></i><span>${e.clienteEndereco||'—'}, ${e.clienteCidade||''}</span></div>
+    `;
+    card.addEventListener('click', ()=>abrirDetalheMobile(e.id));
+    listaEl.appendChild(card);
+  });
+}
+function abrirDetalheMobile(id){
+  const e = entregasCache.find(x=>x.id===id); if(!e) return;
+  entregaAtivaId = id;
+  document.getElementById('detalhe-info-card').innerHTML = `
+    <div class="info-row"><i class="fa-solid fa-building"></i><div><span class="l">Cliente</span>${e.clienteNome}</div></div>
+    <div class="info-row"><i class="fa-solid fa-file-invoice"></i><div><span class="l">Nota Fiscal</span>${e.notaFiscal} / série ${e.serie}</div></div>
+    <div class="info-row"><i class="fa-solid fa-location-dot"></i><div><span class="l">Endereço</span>${e.clienteEndereco||'—'}, ${e.clienteCidade||''}</div></div>
+    <div class="info-row"><i class="fa-solid fa-phone"></i><div><span class="l">Telefone</span>${e.clienteTelefone||'—'}</div></div>
+    <div class="info-row"><i class="fa-solid fa-note-sticky"></i><div><span class="l">Observações</span>${e.observacoes||'Nenhuma'}</div></div>
+  `;
+  const podeIniciar = e.status==='aguardando' || e.status==='em_rota';
+  document.getElementById('detalhe-acoes').classList.toggle('hidden', !podeIniciar);
+  showMobView('detalhe');
+}
+document.getElementById('btn-voltar-detalhe').addEventListener('click', ()=>showMobView('home'));
+
+/* ---- PROBLEMA NA ENTREGA ---- */
+let fotoFachadaBase64 = null;
+document.getElementById('btn-problema-entrega').addEventListener('click', ()=>{
+  document.getElementById('problema-motivo').value='';
+  fotoFachadaBase64 = null;
+  document.getElementById('preview-fachada').classList.add('hidden');
+  document.getElementById('preview-fachada').src='';
+  showMobView('problema');
+});
+document.getElementById('btn-voltar-problema').addEventListener('click', ()=>showMobView('detalhe'));
+document.getElementById('box-fachada').addEventListener('click', ()=>document.getElementById('input-fachada').click());
+document.getElementById('input-fachada').addEventListener('change', async (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  fotoFachadaBase64 = await fileToBase64(file);
+  const img = document.getElementById('preview-fachada'); img.src=fotoFachadaBase64; img.classList.remove('hidden');
+});
+document.getElementById('btn-confirmar-nao-entrega').addEventListener('click', async ()=>{
+  const motivo = document.getElementById('problema-motivo').value;
+  if(!motivo){ toast('Selecione o motivo da não entrega.', 'err'); return; }
+  if(!fotoFachadaBase64){ toast('Tire a foto do estabelecimento/fachada para continuar.', 'err'); return; }
+
+  const btn = document.getElementById('btn-confirmar-nao-entrega');
+  btn.disabled = true; btn.textContent='Registrando...';
+
+  let geo = null;
+  try{
+    if(navigator.geolocation){
+      geo = await new Promise((resolve)=>{
+        navigator.geolocation.getCurrentPosition(pos=>resolve({lat:pos.coords.latitude, lng:pos.coords.longitude}), ()=>resolve(null), { timeout:4000 });
+      });
+    }
+  }catch(e){ geo = null; }
+  const dispositivo = navigator.userAgent.match(/Android|iPhone|iPad|Windows|Mac/)?.[0] + ' · ' + (navigator.userAgent.match(/Chrome|Safari|Firefox/)?.[0]||'Navegador');
+
+  try{
+    if(DEMO_MODE){
+      const idx = demoDB.entregas.findIndex(x=>x.id===entregaAtivaId);
+      if(idx>-1){
+        const e = demoDB.entregas[idx];
+        e.status='nao_entregue'; e.motivoNaoEntrega=motivo; e.fotoFachadaUrl=fotoFachadaBase64;
+        e.dataFinalizacao=fakeTs(new Date()); e.dispositivo=dispositivo; e.geo=geo;
+        e.timeline = [...(e.timeline||[]), {status:'nao_entregue', data:fakeTs(new Date())}];
+      }
+      refreshDemoCaches();
+      addLog(`Entrega NF ${demoDB.entregas[idx]?.notaFiscal} marcada como não entregue (${motivo}) por ${currentProfile.nome}.`);
+      toast('Não entrega registrada. Lembre-se de avisar a logística! (demo)', 'ok');
+      showMobView('home');
+      return;
+    }
+
+    await db.collection('entregas').doc(entregaAtivaId).update({
+      status:'nao_entregue', motivoNaoEntrega: motivo,
+      dataFinalizacao: firebase.firestore.FieldValue.serverTimestamp(), dispositivo, geo,
+      timeline: firebase.firestore.FieldValue.arrayUnion({ status:'nao_entregue', data:new Date() })
+    });
+    if(fotoFachadaBase64){
+      const r = storage.ref().child(`entregas/${entregaAtivaId}/fachada.jpg`);
+      await r.putString(fotoFachadaBase64,'data_url');
+      const url = await r.getDownloadURL();
+      await db.collection('entregas').doc(entregaAtivaId).update({ fotoFachadaUrl: url });
+    }
+    addLog(`Entrega marcada como não entregue (${motivo}) por ${currentProfile.nome}.`);
+    toast('Não entrega registrada. Lembre-se de avisar a logística!', 'ok');
+    showMobView('home');
+  }catch(e){ toast('Erro ao registrar: '+e.message, 'err'); }
+  finally{ btn.disabled=false; btn.textContent='Confirmar não entrega'; }
+});
+
+/* ---- WIZARD DE ENTREGA ---- */
+document.getElementById('btn-iniciar-entrega').addEventListener('click', ()=>{
+  wizardStep = 1; fotoCanhotoBase64=null; fotoMercadoriaBase64=null; assinaturaBase64=null;
+  ['rec-nome','rec-doc','rec-cargo','rec-telefone','obs-entrega'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('rec-doc-tipo').value='CPF';
+  document.getElementById('preview-canhoto').classList.add('hidden'); document.getElementById('preview-canhoto').src='';
+  document.getElementById('preview-mercadoria').classList.add('hidden'); document.getElementById('preview-mercadoria').src='';
+  showMobView('wizard');
+  renderWizardStep();
+  setTimeout(setupSignaturePad, 50);
+});
+document.getElementById('btn-voltar-wizard').addEventListener('click', ()=>{ showMobView('detalhe'); });
+
+function renderWizardStep(){
+  for(let i=1;i<=TOTAL_STEPS;i++) document.getElementById('step-'+i).classList.toggle('hidden', i!==wizardStep);
+  document.getElementById('wizard-title').textContent = `Etapa ${wizardStep} de ${TOTAL_STEPS}`;
+  document.getElementById('step-progress').innerHTML = Array.from({length:TOTAL_STEPS}).map((_,i)=>`<div class="step-dot ${i < wizardStep ? 'done':''}"></div>`).join('');
+  document.getElementById('btn-wizard-voltar').style.visibility = wizardStep===1 ? 'hidden' : 'visible';
+  document.getElementById('btn-wizard-avancar').textContent = wizardStep===TOTAL_STEPS ? 'Finalizar entrega' : 'Avançar';
+}
+document.getElementById('box-canhoto').addEventListener('click', ()=>document.getElementById('input-canhoto').click());
+document.getElementById('input-canhoto').addEventListener('change', async (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  fotoCanhotoBase64 = await fileToBase64(file);
+  const img = document.getElementById('preview-canhoto'); img.src=fotoCanhotoBase64; img.classList.remove('hidden');
+});
+document.getElementById('box-mercadoria').addEventListener('click', ()=>document.getElementById('input-mercadoria').click());
+document.getElementById('input-mercadoria').addEventListener('change', async (e)=>{
+  const file = e.target.files[0]; if(!file) return;
+  fotoMercadoriaBase64 = await fileToBase64(file);
+  const img = document.getElementById('preview-mercadoria'); img.src=fotoMercadoriaBase64; img.classList.remove('hidden');
+});
+
+let sigCtx, sigDrawing=false;
+function setupSignaturePad(){
+  const canvas = document.getElementById('signature-pad');
+  if(!canvas || canvas.dataset.ready) { if(canvas) resizeCanvas(canvas); return; }
+  resizeCanvas(canvas);
+  sigCtx = canvas.getContext('2d');
+  sigCtx.strokeStyle = '#0F172A'; sigCtx.lineWidth = 2.4; sigCtx.lineCap='round';
+  function pos(evt){
+    const rect = canvas.getBoundingClientRect();
+    const t = evt.touches ? evt.touches[0] : evt;
+    return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+  }
+  function start(evt){ sigDrawing=true; const p = pos(evt); sigCtx.beginPath(); sigCtx.moveTo(p.x,p.y); evt.preventDefault(); }
+  function move(evt){ if(!sigDrawing) return; const p = pos(evt); sigCtx.lineTo(p.x,p.y); sigCtx.stroke(); assinaturaBase64 = canvas.toDataURL('image/png'); evt.preventDefault(); }
+  function end(){ sigDrawing=false; }
+  canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move); window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, {passive:false}); canvas.addEventListener('touchmove', move, {passive:false}); canvas.addEventListener('touchend', end);
+  canvas.dataset.ready = '1';
+}
+function resizeCanvas(canvas){
+  const ratio = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * ratio; canvas.height = rect.height * ratio;
+  const ctx = canvas.getContext('2d'); ctx.scale(ratio, ratio);
+}
+document.getElementById('btn-limpar-assinatura').addEventListener('click', ()=>{
+  const canvas = document.getElementById('signature-pad');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  assinaturaBase64 = null;
+});
+
+document.getElementById('btn-wizard-voltar').addEventListener('click', ()=>{ if(wizardStep>1){ wizardStep--; renderWizardStep(); if(wizardStep===3) setTimeout(setupSignaturePad,50); } });
+document.getElementById('btn-wizard-avancar').addEventListener('click', async ()=>{
+  if(wizardStep===1 && !fotoCanhotoBase64){ toast('Tire a foto do canhoto para continuar.', 'err'); return; }
+  if(wizardStep===2 && !fotoMercadoriaBase64){ toast('Tire a foto da mercadoria para continuar.', 'err'); return; }
+  if(wizardStep===3){
+    if(!assinaturaBase64){ toast('Colete a assinatura do recebedor para continuar.', 'err'); return; }
+    const nome = document.getElementById('rec-nome').value.trim();
+    const doc = document.getElementById('rec-doc').value.trim();
+    if(!nome || !doc){ toast('Informe nome e documento (CPF/RG) do recebedor.', 'err'); return; }
+  }
+  if(wizardStep < TOTAL_STEPS){ wizardStep++; renderWizardStep(); if(wizardStep===3) setTimeout(setupSignaturePad,50); return; }
+  await finalizarEntrega();
+});
+
+async function finalizarEntrega(){
+  const btn = document.getElementById('btn-wizard-avancar');
+  btn.disabled = true; btn.textContent='Finalizando...';
+  const recebedorNome = document.getElementById('rec-nome').value.trim();
+  const recebedorDocumentoTipo = document.getElementById('rec-doc-tipo').value;
+  const recebedorDocumentoNumero = document.getElementById('rec-doc').value.trim();
+  const recebedorDocumento = `${recebedorDocumentoTipo}: ${recebedorDocumentoNumero}`;
+  const recebedorCargo = document.getElementById('rec-cargo').value.trim();
+  const recebedorTelefone = document.getElementById('rec-telefone').value.trim();
+  const observacoes = document.getElementById('obs-entrega').value.trim();
+
+  let geo = null;
+  try{
+    if(navigator.geolocation){
+      geo = await new Promise((resolve)=>{
+        navigator.geolocation.getCurrentPosition(
+          pos=>resolve({lat:pos.coords.latitude, lng:pos.coords.longitude}),
+          ()=>resolve(null), { timeout:4000 }
+        );
+      });
+    }
+  }catch(e){ geo = null; }
+
+  const dispositivo = navigator.userAgent.match(/Android|iPhone|iPad|Windows|Mac/)?.[0] + ' · ' + (navigator.userAgent.match(/Chrome|Safari|Firefox/)?.[0]||'Navegador');
+
+  try{
+    if(DEMO_MODE){
+      const idx = demoDB.entregas.findIndex(x=>x.id===entregaAtivaId);
+      if(idx>-1){
+        const e = demoDB.entregas[idx];
+        e.status='entregue'; e.recebedorNome=recebedorNome; e.recebedorDocumento=recebedorDocumento; e.recebedorCargo=recebedorCargo; e.recebedorTelefone=recebedorTelefone;
+        e.observacoes = observacoes || e.observacoes; e.canhotoFotoUrl=fotoCanhotoBase64; e.mercadoriaFotoUrl=fotoMercadoriaBase64; e.assinaturaUrl=assinaturaBase64;
+        e.dataFinalizacao = fakeTs(new Date()); e.dispositivo=dispositivo; e.geo=geo;
+        e.timeline = [...(e.timeline||[]), {status:'entregue', data:fakeTs(new Date())}];
+      }
+      refreshDemoCaches();
+      addLog(`Entrega NF ${demoDB.entregas[idx]?.notaFiscal} finalizada por ${currentProfile.nome}.`);
+      toast('Entrega finalizada com sucesso! (demo)', 'ok');
+      showMobView('home');
+      return;
+    }
+
+    await db.collection('entregas').doc(entregaAtivaId).update({
+      status:'entregue', recebedorNome, recebedorDocumento, recebedorCargo, recebedorTelefone: recebedorTelefone||null,
+      observacoes: observacoes || firebase.firestore.FieldValue.delete(),
+      canhotoFotoUrl: null, mercadoriaFotoUrl: null, assinaturaUrl: null, // atualizado abaixo após upload
+      dataFinalizacao: firebase.firestore.FieldValue.serverTimestamp(), dispositivo, geo,
+      timeline: firebase.firestore.FieldValue.arrayUnion({ status:'entregue', data:new Date() })
+    });
+    // uploads (fire-and-forget robusto)
+    const uploads = {};
+    if(fotoCanhotoBase64){ const r = storage.ref().child(`entregas/${entregaAtivaId}/canhoto.jpg`); await r.putString(fotoCanhotoBase64,'data_url'); uploads.canhotoFotoUrl = await r.getDownloadURL(); }
+    if(fotoMercadoriaBase64){ const r = storage.ref().child(`entregas/${entregaAtivaId}/mercadoria.jpg`); await r.putString(fotoMercadoriaBase64,'data_url'); uploads.mercadoriaFotoUrl = await r.getDownloadURL(); }
+    if(assinaturaBase64){ const r = storage.ref().child(`entregas/${entregaAtivaId}/assinatura.png`); await r.putString(assinaturaBase64,'data_url'); uploads.assinaturaUrl = await r.getDownloadURL(); }
+    if(Object.keys(uploads).length) await db.collection('entregas').doc(entregaAtivaId).update(uploads);
+
+    addLog(`Entrega finalizada por ${currentProfile.nome}.`);
+    toast('Entrega finalizada com sucesso!', 'ok');
+    showMobView('home');
+  }catch(e){ toast('Erro ao finalizar: '+e.message, 'err'); }
+  finally{ btn.disabled=false; btn.textContent='Finalizar entrega'; }
+}
+
+/* =========================================================
+   REGISTRO DO SERVICE WORKER (PWA instalável)
+   ========================================================= */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(err=>console.warn('Falha ao registrar service worker:', err));
+  });
+}
+</script>
+</body>
+</html>
