@@ -351,7 +351,7 @@ p.auth-sub{color:var(--text-dim); font-size:13.5px; margin-bottom:24px; line-hei
       </nav>
       <div class="sidebar-footer">
         <div class="avatar" id="admin-avatar">A</div>
-        <div class="who sidebar-text"><div class="n" id="admin-name">—</div><div class="r">Administrador</div></div>
+        <div class="who sidebar-text"><div class="n" id="admin-name">—</div></div>
         <button id="btn-logout-admin" title="Sair"><i class="fa-solid fa-right-from-bracket"></i></button>
       </div>
     </aside>
@@ -629,7 +629,8 @@ p.auth-sub{color:var(--text-dim); font-size:13.5px; margin-bottom:24px; line-hei
     <div class="field"><label>Nome</label><input type="text" id="mot-nome"></div>
     <div class="field-row"><div class="field"><label>CPF</label><input type="text" id="mot-cpf" placeholder="000.000.000-00"></div><div class="field"><label>RG</label><input type="text" id="mot-rg"></div></div>
     <div class="field-row"><div class="field"><label>Telefone</label><input type="text" id="mot-telefone"></div><div class="field"><label>E-mail</label><input type="email" id="mot-email"></div></div>
-    <div class="field"><label>Senha de acesso</label><input type="password" id="mot-senha" placeholder="Definida no primeiro cadastro"></div>
+    <div class="field"><label>Senha de acesso</label><input type="password" id="mot-senha" placeholder="Mínimo 6 caracteres"></div>
+    <div id="mot-senha-nota" style="font-size:11.5px; color:var(--text-faint); margin:-8px 0 14px;">Essa senha, junto com o e-mail, é o que o motorista vai usar para logar no app.</div>
     <div class="field-row"><div class="field"><label>Placa do veículo</label><input type="text" id="mot-placa" placeholder="ABC-1D23"></div><div class="field"><label>Modelo do veículo</label><input type="text" id="mot-modelo" placeholder="Ex: Fiorino"></div></div>
     <div class="field"><label>Status</label><select id="mot-status"><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></div>
     <button class="btn btn-primary btn-block" id="btn-salvar-motorista">Salvar motorista</button>
@@ -794,7 +795,7 @@ document.getElementById('btn-login').addEventListener('click', async ()=>{
   catch(e){ errBox.textContent = traduzErroAuth(e); errBox.style.display='block'; }
 });
 function traduzErroAuth(e){
-  const map = { 'auth/invalid-email':'E-mail inválido.', 'auth/user-not-found':'Usuário não encontrado.', 'auth/wrong-password':'Senha incorreta.', 'auth/invalid-credential':'E-mail ou senha incorretos.', 'auth/too-many-requests':'Muitas tentativas. Tente mais tarde.' };
+  const map = { 'auth/invalid-email':'E-mail inválido.', 'auth/user-not-found':'Usuário não encontrado.', 'auth/wrong-password':'Senha incorreta.', 'auth/invalid-credential':'E-mail ou senha incorretos.', 'auth/too-many-requests':'Muitas tentativas. Tente mais tarde.', 'auth/email-already-in-use':'Este e-mail já está cadastrado em outro acesso.', 'auth/weak-password':'A senha precisa ter pelo menos 6 caracteres.' };
   return map[e.code] || ('Erro: ' + e.message);
 }
 document.getElementById('link-forgot').addEventListener('click', ()=>{ document.getElementById('auth-login-block').classList.add('hidden'); document.getElementById('auth-forgot-block').classList.remove('hidden'); });
@@ -894,8 +895,6 @@ document.getElementById('btn-collapse-sidebar').addEventListener('click', ()=>{
    ADMIN INIT + DATA LISTENERS
    ========================================================= */
 function initAdminApp(){
-  document.getElementById('admin-name').textContent = currentProfile.nome || currentUser.email;
-  document.getElementById('admin-avatar').textContent = iniciais(currentProfile.nome || currentUser.email);
   if(!listenersAttached){ attachRealtimeListeners(); listenersAttached = true; }
   loadConfig();
 }
@@ -1196,6 +1195,10 @@ document.getElementById('btn-novo-motorista').addEventListener('click', ()=>{
   document.getElementById('modal-motorista-title').textContent='Cadastrar motorista';
   ['mot-nome','mot-cpf','mot-rg','mot-telefone','mot-email','mot-senha','mot-placa','mot-modelo'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('mot-status').value='ativo';
+  document.getElementById('mot-senha').disabled = false;
+  document.getElementById('mot-senha').placeholder = 'Mínimo 6 caracteres';
+  document.getElementById('mot-email').disabled = false;
+  document.getElementById('mot-senha-nota').textContent = 'Essa senha, junto com o e-mail, é o que o motorista vai usar para logar no app.';
   openModal('modal-motorista');
 });
 function abrirEdicaoMotorista(id){
@@ -1205,19 +1208,38 @@ function abrirEdicaoMotorista(id){
   document.getElementById('mot-nome').value=m.nome||''; document.getElementById('mot-cpf').value=m.cpf||''; document.getElementById('mot-rg').value=m.rg||'';
   document.getElementById('mot-telefone').value=m.telefone||''; document.getElementById('mot-email').value=m.email||''; document.getElementById('mot-senha').value='';
   document.getElementById('mot-placa').value=m.placa||''; document.getElementById('mot-modelo').value=m.modelo||''; document.getElementById('mot-status').value=m.status||'ativo';
+  // Senha e e-mail de login não podem ser trocados por aqui (evita descasar do Firebase Authentication)
+  document.getElementById('mot-senha').disabled = true;
+  document.getElementById('mot-senha').placeholder = '••••••••';
+  document.getElementById('mot-email').disabled = true;
+  document.getElementById('mot-senha-nota').textContent = 'Para alterar e-mail ou senha de acesso, peça ao motorista para usar "Esqueci minha senha" na tela de login.';
   openModal('modal-motorista');
 }
+
+// App secundário do Firebase — permite criar o login do motorista SEM derrubar a sessão do admin
+function getSecondaryAuth(){
+  let secondaryApp;
+  try{ secondaryApp = firebase.app('Secondary'); }
+  catch(e){ secondaryApp = firebase.initializeApp(firebaseConfig, 'Secondary'); }
+  return secondaryApp.auth();
+}
+
 document.getElementById('btn-salvar-motorista').addEventListener('click', async ()=>{
   const nome = document.getElementById('mot-nome').value.trim();
   const cpf = document.getElementById('mot-cpf').value.trim();
   const rg = document.getElementById('mot-rg').value.trim();
   const telefone = document.getElementById('mot-telefone').value.trim();
   const email = document.getElementById('mot-email').value.trim();
+  const senha = document.getElementById('mot-senha').value;
   const placa = document.getElementById('mot-placa').value.trim();
   const modelo = document.getElementById('mot-modelo').value.trim();
   const status = document.getElementById('mot-status').value;
   if(!nome || !cpf){ toast('Informe nome e CPF.', 'err'); return; }
   const payload = { nome, cpf, rg, telefone, email, placa, modelo, status };
+
+  const btn = document.getElementById('btn-salvar-motorista');
+  btn.disabled = true; btn.textContent='Salvando...';
+
   try{
     if(DEMO_MODE){
       if(editandoMotoristaId){ const idx = demoDB.motoristas.findIndex(x=>x.id===editandoMotoristaId); demoDB.motoristas[idx] = {...demoDB.motoristas[idx], ...payload}; }
@@ -1227,11 +1249,37 @@ document.getElementById('btn-salvar-motorista').addEventListener('click', async 
       closeModal('modal-motorista');
       return;
     }
-    if(editandoMotoristaId) await db.collection('motoristas').doc(editandoMotoristaId).update(payload);
-    else await db.collection('motoristas').add(payload);
-    toast('Motorista salvo!', 'ok');
+
+    if(editandoMotoristaId){
+      // edição: nunca mexe em e-mail/senha de login, só nos dados cadastrais
+      await db.collection('motoristas').doc(editandoMotoristaId).update(payload);
+      toast('Motorista atualizado!', 'ok');
+      closeModal('modal-motorista');
+      return;
+    }
+
+    // criação: exige e-mail e senha para já deixar o login do motorista pronto
+    if(!email){ toast('Informe o e-mail do motorista.', 'err'); return; }
+    if(!senha || senha.length < 6){ toast('Defina uma senha de acesso com pelo menos 6 caracteres.', 'err'); return; }
+
+    const secAuth = getSecondaryAuth();
+    const cred = await secAuth.createUserWithEmailAndPassword(email, senha);
+    const uid = cred.user.uid;
+    await secAuth.signOut();
+
+    // usamos o mesmo UID do login como ID dos documentos, para as entregas baterem certinho com o motorista
+    await Promise.all([
+      db.collection('usuarios').doc(uid).set({ nome, email, role:'motorista', telefone: telefone||null }),
+      db.collection('motoristas').doc(uid).set(payload)
+    ]);
+
+    toast('Motorista cadastrado! Ele já pode logar com o e-mail e senha definidos.', 'ok');
     closeModal('modal-motorista');
-  }catch(e){ toast('Erro: '+e.message, 'err'); }
+  }catch(e){
+    toast(traduzErroAuth(e), 'err');
+  }finally{
+    btn.disabled=false; btn.textContent='Salvar motorista';
+  }
 });
 
 /* ---- CLIENTES ---- */
@@ -1305,7 +1353,11 @@ async function loadConfig(){
   try{
     let d;
     if(DEMO_MODE){ d = demoDB.empresa; }
-    else{ const doc = await db.collection('config').doc('geral').get(); if(!doc.exists) return; d = doc.data(); }
+    else{
+      const doc = await db.collection('config').doc('geral').get();
+      if(!doc.exists){ atualizarBrandingSidebar(null); return; }
+      d = doc.data();
+    }
     document.getElementById('cfg-nome').value = d.nome||'';
     document.getElementById('cfg-cnpj').value = d.cnpj||'';
     document.getElementById('cfg-endereco').value = d.endereco||'';
@@ -1314,7 +1366,12 @@ async function loadConfig(){
     document.getElementById('empresa-sub').textContent = d.nome ? `${d.nome} · Visão geral das entregas` : 'Visão geral das entregas';
     const logoEl = document.getElementById('cfg-logo-preview');
     logoEl.innerHTML = d.logo ? `<img src="${d.logo}">` : `<i class="fa-solid fa-building"></i>`;
+    atualizarBrandingSidebar(d);
   }catch(e){ console.error(e); }
+}
+function atualizarBrandingSidebar(d){
+  document.getElementById('admin-name').textContent = (d && d.nome) ? d.nome : 'Minha empresa';
+  document.getElementById('admin-avatar').innerHTML = (d && d.logo) ? `<img src="${d.logo}">` : iniciais((d && d.nome) || 'Empresa');
 }
 let cfgLogoBase64 = null;
 document.getElementById('cfg-logo-input').addEventListener('change', async (e)=>{

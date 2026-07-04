@@ -311,27 +311,8 @@ p.auth-sub{color:var(--text-dim); font-size:13.5px; margin-bottom:24px; line-hei
       <div class="field"><label>E-mail</label><input type="email" id="login-email" placeholder="voce@empresa.com"></div>
       <div class="field"><label>Senha</label><input type="password" id="login-password" placeholder="••••••••"></div>
       <button class="btn btn-primary btn-block" id="btn-login">Entrar</button>
-      <div class="auth-links"><button id="link-forgot">Esqueci minha senha</button><button id="link-primeiro-acesso">Primeiro acesso? Criar conta</button></div>
-      <div class="test-note"><b>Importante:</b> login real exige preencher o <code>firebaseConfig</code> no código com os dados do seu projeto Firebase. Até lá, use o modo demonstração.</div>
-    </div>
-
-    <div id="auth-signup-motorista-block" class="hidden">
-      <h1 class="auth-title">Criar meu acesso</h1>
-      <p class="auth-sub">Primeira vez por aqui? Preencha seus dados para criar seu login de motorista. Nas próximas vezes, use só e-mail e senha em "Entrar".</p>
-      <div class="auth-error" id="signup-motorista-error"></div>
-      <div class="field"><label>Nome completo</label><input type="text" id="signup-mot-nome" placeholder="Seu nome completo"></div>
-      <div class="field-row">
-        <div class="field"><label>CPF</label><input type="text" id="signup-mot-cpf" placeholder="000.000.000-00"></div>
-        <div class="field"><label>Telefone</label><input type="text" id="signup-mot-telefone" placeholder="(00) 00000-0000"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Placa do veículo</label><input type="text" id="signup-mot-placa" placeholder="ABC-1D23"></div>
-        <div class="field"><label>Modelo do veículo</label><input type="text" id="signup-mot-modelo" placeholder="Ex: Fiorino"></div>
-      </div>
-      <div class="field"><label>E-mail</label><input type="email" id="signup-mot-email" placeholder="voce@email.com"></div>
-      <div class="field"><label>Senha</label><input type="password" id="signup-mot-senha" placeholder="mínimo 6 caracteres"></div>
-      <button class="btn btn-primary btn-block" id="btn-criar-acesso-motorista">Criar acesso e entrar</button>
-      <div class="auth-links"><button id="link-back-login-signup">Voltar para o login</button><span></span></div>
+      <div class="auth-links"><button id="link-forgot">Esqueci minha senha</button><span></span></div>
+      <div class="test-note"><b>Importante:</b> seu acesso é criado pelo administrador. Se esqueceu a senha, use "Esqueci minha senha" acima.</div>
     </div>
 
     <div id="auth-forgot-block" class="hidden">
@@ -697,7 +678,6 @@ let entregasCache = [];
 let motoristasCache = [];
 let clientesCache = [];
 let listenersAttached = false;
-let signupMotoristaEmAndamento = false;
 let cardFilterAtivo = 'todas';
 let editandoEntregaId = null;
 let editandoMotoristaId = null;
@@ -825,44 +805,6 @@ function traduzErroAuth(e){
 }
 document.getElementById('link-forgot').addEventListener('click', ()=>{ document.getElementById('auth-login-block').classList.add('hidden'); document.getElementById('auth-forgot-block').classList.remove('hidden'); });
 document.getElementById('link-back-login').addEventListener('click', ()=>{ document.getElementById('auth-forgot-block').classList.add('hidden'); document.getElementById('auth-login-block').classList.remove('hidden'); });
-document.getElementById('link-primeiro-acesso').addEventListener('click', ()=>{ document.getElementById('auth-login-block').classList.add('hidden'); document.getElementById('auth-signup-motorista-block').classList.remove('hidden'); });
-document.getElementById('link-back-login-signup').addEventListener('click', ()=>{ document.getElementById('auth-signup-motorista-block').classList.add('hidden'); document.getElementById('auth-login-block').classList.remove('hidden'); });
-
-document.getElementById('btn-criar-acesso-motorista').addEventListener('click', async ()=>{
-  const nome = document.getElementById('signup-mot-nome').value.trim();
-  const cpf = document.getElementById('signup-mot-cpf').value.trim();
-  const telefone = document.getElementById('signup-mot-telefone').value.trim();
-  const placa = document.getElementById('signup-mot-placa').value.trim();
-  const modelo = document.getElementById('signup-mot-modelo').value.trim();
-  const email = document.getElementById('signup-mot-email').value.trim();
-  const senha = document.getElementById('signup-mot-senha').value;
-  const errBox = document.getElementById('signup-motorista-error');
-  errBox.style.display='none';
-  if(!nome || !cpf || !email || !senha){ errBox.textContent='Preencha ao menos nome, CPF, e-mail e senha.'; errBox.style.display='block'; return; }
-
-  const btn = document.getElementById('btn-criar-acesso-motorista');
-  btn.disabled = true; btn.textContent='Criando acesso...';
-  signupMotoristaEmAndamento = true;
-  try{
-    const cred = await auth.createUserWithEmailAndPassword(email, senha);
-    const uid = cred.user.uid;
-    await Promise.all([
-      db.collection('usuarios').doc(uid).set({ nome, email, role:'motorista', telefone: telefone||null }),
-      db.collection('motoristas').doc(uid).set({ nome, cpf, telefone: telefone||null, placa: placa||null, modelo: modelo||null, status:'ativo', email })
-    ]);
-    currentUser = cred.user;
-    currentProfile = { id: uid, uid, role:'motorista', nome, email, telefone: telefone||null };
-    document.getElementById('auth-screen').style.display='none';
-    routeByRole();
-    toast('Conta criada com sucesso! Bem-vindo(a), ' + nome.split(' ')[0] + '.', 'ok');
-  }catch(e){
-    errBox.textContent = traduzErroAuth(e);
-    errBox.style.display='block';
-  }finally{
-    btn.disabled=false; btn.textContent='Criar acesso e entrar';
-    signupMotoristaEmAndamento = false;
-  }
-});
 
 document.getElementById('btn-forgot').addEventListener('click', async ()=>{
   const email = document.getElementById('forgot-email').value.trim();
@@ -890,7 +832,6 @@ document.getElementById('btn-logout-mobile').addEventListener('click', doLogout)
 
 auth.onAuthStateChanged(async (user)=>{
   document.getElementById('loading').style.display='none';
-  if(signupMotoristaEmAndamento) return; // evita corrida: o próprio fluxo de criação de conta já faz o roteamento
   if(!user){
     if(DEMO_MODE) return;
     currentUser=null; currentProfile=null;
