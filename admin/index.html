@@ -5,13 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Certify Delivery · Confirmação Digital de Entrega (POD)</title>
 <meta name="theme-color" content="#2563EB">
-<link rel="manifest" href="manifest.json">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Certify Delivery">
-<meta name="mobile-web-app-capable" content="yes">
+<!-- <link rel="manifest" href="manifest.json"> -->
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -311,27 +305,8 @@ p.auth-sub{color:var(--text-dim); font-size:13.5px; margin-bottom:24px; line-hei
       <div class="field"><label>E-mail</label><input type="email" id="login-email" placeholder="voce@empresa.com"></div>
       <div class="field"><label>Senha</label><input type="password" id="login-password" placeholder="••••••••"></div>
       <button class="btn btn-primary btn-block" id="btn-login">Entrar</button>
-      <div class="auth-links"><button id="link-forgot">Esqueci minha senha</button><button id="link-primeiro-acesso">Primeiro acesso? Criar conta</button></div>
+      <div class="auth-links"><button id="link-forgot">Esqueci minha senha</button><span></span></div>
       <div class="test-note"><b>Importante:</b> login real exige preencher o <code>firebaseConfig</code> no código com os dados do seu projeto Firebase. Até lá, use o modo demonstração.</div>
-    </div>
-
-    <div id="auth-signup-motorista-block" class="hidden">
-      <h1 class="auth-title">Criar meu acesso</h1>
-      <p class="auth-sub">Primeira vez por aqui? Preencha seus dados para criar seu login de motorista. Nas próximas vezes, use só e-mail e senha em "Entrar".</p>
-      <div class="auth-error" id="signup-motorista-error"></div>
-      <div class="field"><label>Nome completo</label><input type="text" id="signup-mot-nome" placeholder="Seu nome completo"></div>
-      <div class="field-row">
-        <div class="field"><label>CPF</label><input type="text" id="signup-mot-cpf" placeholder="000.000.000-00"></div>
-        <div class="field"><label>Telefone</label><input type="text" id="signup-mot-telefone" placeholder="(00) 00000-0000"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Placa do veículo</label><input type="text" id="signup-mot-placa" placeholder="ABC-1D23"></div>
-        <div class="field"><label>Modelo do veículo</label><input type="text" id="signup-mot-modelo" placeholder="Ex: Fiorino"></div>
-      </div>
-      <div class="field"><label>E-mail</label><input type="email" id="signup-mot-email" placeholder="voce@email.com"></div>
-      <div class="field"><label>Senha</label><input type="password" id="signup-mot-senha" placeholder="mínimo 6 caracteres"></div>
-      <button class="btn btn-primary btn-block" id="btn-criar-acesso-motorista">Criar acesso e entrar</button>
-      <div class="auth-links"><button id="link-back-login-signup">Voltar para o login</button><span></span></div>
     </div>
 
     <div id="auth-forgot-block" class="hidden">
@@ -352,7 +327,7 @@ p.auth-sub{color:var(--text-dim); font-size:13.5px; margin-bottom:24px; line-hei
   <div class="auth-card" style="text-align:center;">
     <div class="auth-logo" style="justify-content:center;"><div class="mark"><i class="fa-solid fa-truck-fast"></i></div><div class="name">Certify<span>Delivery</span></div></div>
     <h1 class="auth-title">Acesso restrito</h1>
-    <p class="auth-sub" id="restricted-text">Este endereço é exclusivo para motoristas.</p>
+    <p class="auth-sub" id="restricted-text">Este endereço é exclusivo para administradores.</p>
     <button class="btn btn-ghost btn-block" id="btn-restricted-logout">Sair e voltar ao login</button>
   </div>
 </div>
@@ -697,7 +672,6 @@ let entregasCache = [];
 let motoristasCache = [];
 let clientesCache = [];
 let listenersAttached = false;
-let signupMotoristaEmAndamento = false;
 let cardFilterAtivo = 'todas';
 let editandoEntregaId = null;
 let editandoMotoristaId = null;
@@ -820,50 +794,11 @@ document.getElementById('btn-login').addEventListener('click', async ()=>{
   catch(e){ errBox.textContent = traduzErroAuth(e); errBox.style.display='block'; }
 });
 function traduzErroAuth(e){
-  const map = { 'auth/invalid-email':'E-mail inválido.', 'auth/user-not-found':'Usuário não encontrado.', 'auth/wrong-password':'Senha incorreta.', 'auth/invalid-credential':'E-mail ou senha incorretos.', 'auth/too-many-requests':'Muitas tentativas. Tente mais tarde.', 'auth/email-already-in-use':'Este e-mail já tem uma conta. Use "Entrar".', 'auth/weak-password':'A senha precisa ter pelo menos 6 caracteres.' };
+  const map = { 'auth/invalid-email':'E-mail inválido.', 'auth/user-not-found':'Usuário não encontrado.', 'auth/wrong-password':'Senha incorreta.', 'auth/invalid-credential':'E-mail ou senha incorretos.', 'auth/too-many-requests':'Muitas tentativas. Tente mais tarde.' };
   return map[e.code] || ('Erro: ' + e.message);
 }
 document.getElementById('link-forgot').addEventListener('click', ()=>{ document.getElementById('auth-login-block').classList.add('hidden'); document.getElementById('auth-forgot-block').classList.remove('hidden'); });
 document.getElementById('link-back-login').addEventListener('click', ()=>{ document.getElementById('auth-forgot-block').classList.add('hidden'); document.getElementById('auth-login-block').classList.remove('hidden'); });
-document.getElementById('link-primeiro-acesso').addEventListener('click', ()=>{ document.getElementById('auth-login-block').classList.add('hidden'); document.getElementById('auth-signup-motorista-block').classList.remove('hidden'); });
-document.getElementById('link-back-login-signup').addEventListener('click', ()=>{ document.getElementById('auth-signup-motorista-block').classList.add('hidden'); document.getElementById('auth-login-block').classList.remove('hidden'); });
-
-document.getElementById('btn-criar-acesso-motorista').addEventListener('click', async ()=>{
-  const nome = document.getElementById('signup-mot-nome').value.trim();
-  const cpf = document.getElementById('signup-mot-cpf').value.trim();
-  const telefone = document.getElementById('signup-mot-telefone').value.trim();
-  const placa = document.getElementById('signup-mot-placa').value.trim();
-  const modelo = document.getElementById('signup-mot-modelo').value.trim();
-  const email = document.getElementById('signup-mot-email').value.trim();
-  const senha = document.getElementById('signup-mot-senha').value;
-  const errBox = document.getElementById('signup-motorista-error');
-  errBox.style.display='none';
-  if(!nome || !cpf || !email || !senha){ errBox.textContent='Preencha ao menos nome, CPF, e-mail e senha.'; errBox.style.display='block'; return; }
-
-  const btn = document.getElementById('btn-criar-acesso-motorista');
-  btn.disabled = true; btn.textContent='Criando acesso...';
-  signupMotoristaEmAndamento = true;
-  try{
-    const cred = await auth.createUserWithEmailAndPassword(email, senha);
-    const uid = cred.user.uid;
-    await Promise.all([
-      db.collection('usuarios').doc(uid).set({ nome, email, role:'motorista', telefone: telefone||null }),
-      db.collection('motoristas').doc(uid).set({ nome, cpf, telefone: telefone||null, placa: placa||null, modelo: modelo||null, status:'ativo', email })
-    ]);
-    currentUser = cred.user;
-    currentProfile = { id: uid, uid, role:'motorista', nome, email, telefone: telefone||null };
-    document.getElementById('auth-screen').style.display='none';
-    routeByRole();
-    toast('Conta criada com sucesso! Bem-vindo(a), ' + nome.split(' ')[0] + '.', 'ok');
-  }catch(e){
-    errBox.textContent = traduzErroAuth(e);
-    errBox.style.display='block';
-  }finally{
-    btn.disabled=false; btn.textContent='Criar acesso e entrar';
-    signupMotoristaEmAndamento = false;
-  }
-});
-
 document.getElementById('btn-forgot').addEventListener('click', async ()=>{
   const email = document.getElementById('forgot-email').value.trim();
   const errBox = document.getElementById('forgot-error'); const okBox = document.getElementById('forgot-success');
@@ -890,7 +825,6 @@ document.getElementById('btn-logout-mobile').addEventListener('click', doLogout)
 
 auth.onAuthStateChanged(async (user)=>{
   document.getElementById('loading').style.display='none';
-  if(signupMotoristaEmAndamento) return; // evita corrida: o próprio fluxo de criação de conta já faz o roteamento
   if(!user){
     if(DEMO_MODE) return;
     currentUser=null; currentProfile=null;
@@ -909,13 +843,13 @@ auth.onAuthStateChanged(async (user)=>{
   }catch(e){ toast('Erro ao carregar perfil: '+e.message, 'err'); }
 });
 
-const APP_MODE = 'motorista'; // este arquivo é o app do entregador (PWA mobile)
+const APP_MODE = 'admin'; // este arquivo é o painel administrativo (desktop)
 
 function routeByRole(){
-  if(APP_MODE==='motorista' && currentProfile.role!=='motorista'){
+  if(APP_MODE==='admin' && currentProfile.role!=='admin'){
     document.getElementById('admin-app').style.display='none';
     document.getElementById('mobile-app').style.display='none';
-    document.getElementById('restricted-text').textContent = 'Este endereço é exclusivo para motoristas. Use o link do painel administrativo para acessar com este usuário.';
+    document.getElementById('restricted-text').textContent = 'Este endereço é exclusivo para administradores. Use o link do app do motorista para acessar com este usuário.';
     document.getElementById('restricted-screen').style.display='flex';
     return;
   }
@@ -1688,15 +1622,6 @@ async function finalizarEntrega(){
     showMobView('home');
   }catch(e){ toast('Erro ao finalizar: '+e.message, 'err'); }
   finally{ btn.disabled=false; btn.textContent='Finalizar entrega'; }
-}
-
-/* =========================================================
-   REGISTRO DO SERVICE WORKER (PWA instalável)
-   ========================================================= */
-if('serviceWorker' in navigator){
-  window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('sw.js').catch(err=>console.warn('Falha ao registrar service worker:', err));
-  });
 }
 </script>
 </body>
