@@ -281,7 +281,13 @@ p.auth-sub{color:var(--text-dim); font-size:13.5px; margin-bottom:24px; line-hei
 
 .bn-fixed{position:sticky; bottom:0; padding:14px 18px calc(14px + env(safe-area-inset-bottom)); background:linear-gradient(0deg, var(--bg) 60%, transparent);}
 
-@media (min-width:481px){ #mobile-app{border-left:1px solid var(--border); border-right:1px solid var(--border); box-shadow:0 0 60px rgba(0,0,0,.08);} }
+@media (min-width:481px){ #mobile-app{border-left:1px solid var(--border); border-right:1px solid var(--border); box-shadow:0 0 60px rgba(0,0,0,.08);} }@media print{
+  .sidebar, .mobile-topbar, .date-filter-bar, #btn-exportar-excel, #btn-exportar-pdf, .collapse-btn{ display:none !important; }
+  body, .main-panel{ background:#fff !important; padding:0 !important; }
+  .panel-card, .kpi-card{ box-shadow:none !important; border:1px solid #ccc !important; break-inside:avoid; }
+  #v-dashboard{ display:block !important; }
+  .view:not(#v-dashboard){ display:none !important; }
+}
 </style>
 </head>
 <body>
@@ -383,6 +389,10 @@ p.auth-sub{color:var(--text-dim); font-size:13.5px; margin-bottom:24px; line-hei
       <section class="view active" id="v-dashboard">
         <div class="panel-header">
           <div><div class="panel-title">Dashboard</div><div class="panel-sub" id="empresa-sub">Visão geral das entregas</div></div>
+          <div style="display:flex; gap:10px;">
+            <button class="btn btn-ghost btn-sm" id="btn-exportar-excel"><i class="fa-solid fa-file-excel"></i> Exportar Excel</button>
+            <button class="btn btn-ghost btn-sm" id="btn-exportar-pdf"><i class="fa-solid fa-file-pdf"></i> Exportar PDF</button>
+          </div>
         </div>
 
         <div class="date-filter-bar">
@@ -418,6 +428,19 @@ p.auth-sub{color:var(--text-dim); font-size:13.5px; margin-bottom:24px; line-hei
           <div class="panel-card">
             <h4>Ranking de motoristas</h4>
             <ul class="rank-list" id="ranking-motoristas"><li style="color:var(--text-faint);">Sem dados ainda</li></ul>
+          </div>
+        </div>
+
+        <div class="dash-grid">
+          <div class="panel-card">
+            <h4>Tempo médio: em rota → entregue (por motorista)</h4>
+            <ul class="rank-list" id="tempo-medio-motoristas"><li style="color:var(--text-faint);">Sem dados suficientes ainda</li></ul>
+          </div>
+          <div class="panel-card">
+            <h4>Taxa de sucesso por cliente/região</h4>
+            <div class="table-wrap" style="box-shadow:none; max-height:280px; overflow-y:auto;">
+              <table class="data-table"><thead><tr><th>Cliente</th><th>Cidade</th><th>Taxa de sucesso</th><th>Total</th></tr></thead><tbody id="tbl-taxa-sucesso"></tbody></table>
+            </div>
           </div>
         </div>
       </section>
@@ -517,6 +540,13 @@ p.auth-sub{color:var(--text-dim); font-size:13.5px; margin-bottom:24px; line-hei
             <label for="cfg-plano-ativo" style="margin:0;">Assinatura ativa (libera o acesso após o teste grátis)</label>
           </div>
           <button class="btn btn-primary" id="btn-salvar-plano">Salvar assinatura</button>
+        </div>
+
+        <div class="panel-card" style="max-width:560px; margin-top:16px;">
+          <h4>Migração de dados</h4>
+          <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:14px;">Se você usava o sistema antes da separação por empresa, clique aqui uma vez para vincular seus motoristas, clientes e entregas já cadastrados à sua conta. É seguro clicar mais de uma vez.</p>
+          <button class="btn btn-ghost" id="btn-migrar-dados">Migrar meus dados antigos</button>
+          <div id="migracao-resultado" style="font-size:12.5px; color:var(--text-dim); margin-top:10px;"></div>
         </div>
       </section>
     </main>
@@ -758,6 +788,8 @@ let clientesCache = [];
 let listenersAttached = false;
 let signupAdminEmAndamento = false;
 let cardFilterAtivo = 'todas';
+let dashboardListaAtual = [];
+let dashboardPeriodoLabel = '';
 let editandoEntregaId = null;
 let editandoMotoristaId = null;
 let editandoClienteId = null;
@@ -898,7 +930,7 @@ document.getElementById('btn-criar-acesso-admin').addEventListener('click', asyn
   try{
     const cred = await auth.createUserWithEmailAndPassword(email, senha);
     const uid = cred.user.uid;
-    await db.collection('usuarios').doc(uid).set({ nome, email, role:'admin' });
+    await db.collection('usuarios').doc(uid).set({ nome, email, role:'admin', empresaId: uid });
     currentUser = cred.user;
     currentProfile = { id: uid, uid, role:'admin', nome, email };
     document.getElementById('auth-screen').style.display='none';
@@ -1023,23 +1055,32 @@ async function initAdminApp(){
 async function checkTrialStatus(){
   if(DEMO_MODE){ document.getElementById('trial-badge').classList.add('hidden'); return true; }
   try{
-    const ref = db.collection('config').doc('geral');
-    const doc = await ref.get();
-    let d = doc.exists ? doc.data() : {};
+    const empresaId = currentUser.uid;
+    const ref = db.collection('config').doc(empresaId);
+    let doc = await ref.get();
+    let d = doc.exists ? doc.data() : null;
+
+    if(!d){
+      // Ainda não existe config desta empresa — antes de criar do zero,
+      // tenta herdar os dados do antigo config/geral (formato anterior à separação por empresa).
+      const docGeral = await db.collection('config').doc('geral').get();
+      if(docGeral.exists){
+        d = { ...docGeral.data() };
+        await ref.set({ ...d, empresaId }, {merge:true});
+      } else {
+        d = {};
+      }
+    }
 
     if(!d.trialStartedAt){
-      await ref.set({ trialStartedAt: firebase.firestore.FieldValue.serverTimestamp(), ownerUid: currentUser.uid }, {merge:true});
+      await ref.set({ trialStartedAt: firebase.firestore.FieldValue.serverTimestamp(), empresaId }, {merge:true});
       d.trialStartedAt = { toDate: () => new Date() };
-      d.ownerUid = currentUser.uid;
-    }
-    if(!d.ownerUid){
-      await ref.set({ ownerUid: currentUser.uid }, {merge:true});
-      d.ownerUid = currentUser.uid;
     }
     tenantConfigCache = d;
+    tenantConfigCache.empresaId = empresaId;
 
     // 1) Assinatura ativa via extensão "Run Payments with Stripe"?
-    const assinatura = await buscarAssinaturaAtiva(d.ownerUid);
+    const assinatura = await buscarAssinaturaAtiva(empresaId);
     if(assinatura){
       tenantConfigCache.planoAtivo = true;
       tenantConfigCache.planoNome = assinatura.role || tenantConfigCache.planoNome || null;
@@ -1109,12 +1150,14 @@ function renderAllAdminViews(){
 function attachRealtimeListeners(){
   if(DEMO_MODE){ refreshDemoCaches(); return; }
 
+  const empresaId = tenantConfigCache.empresaId || currentUser.uid;
+
   // Para motoristas, a regra de segurança exige que a própria consulta já venha filtrada
   // por motoristaId (não dá pra buscar a coleção inteira e filtrar só no cliente).
   const ehMotorista = currentProfile && currentProfile.role === 'motorista';
   const entregasQuery = ehMotorista
     ? db.collection('entregas').where('motoristaId', '==', currentUser.uid)
-    : db.collection('entregas').orderBy('dataAgendada', 'desc');
+    : db.collection('entregas').where('empresaId', '==', empresaId).orderBy('dataAgendada', 'desc');
 
   entregasQuery.onSnapshot(snap=>{
     entregasCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
@@ -1122,12 +1165,12 @@ function attachRealtimeListeners(){
     renderAllAdminViews(); renderMobileHome();
   }, err=>{ console.error(err); toast('Erro ao carregar entregas: '+err.message, 'err'); });
 
-  db.collection('motoristas').orderBy('nome').onSnapshot(snap=>{
-    motoristasCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+  db.collection('motoristas').where('empresaId', '==', empresaId).onSnapshot(snap=>{
+    motoristasCache = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
     renderMotoristas(); populateSelects();
   }, err=>console.error(err));
-  db.collection('clientes').orderBy('nome').onSnapshot(snap=>{
-    clientesCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+  db.collection('clientes').where('empresaId', '==', empresaId).onSnapshot(snap=>{
+    clientesCache = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
     renderClientes(); populateSelects();
   }, err=>console.error(err));
 }
@@ -1290,6 +1333,8 @@ document.getElementById('btn-salvar-entrega').addEventListener('click', async ()
     // ---- EDIÇÃO: atualiza a entrega existente (sempre uma única nota) ----
     if(editandoEntregaId){
       const n = notas[0];
+      const entregaOriginal = entregasCache.find(x=>x.id===editandoEntregaId);
+      const statusMudou = entregaOriginal && entregaOriginal.status !== status;
       const payload = {
         notaFiscal:n.nf, serie:n.serie||'1', clienteId, clienteNome:cliente?.nome, clienteEndereco:cliente?.endereco, clienteCidade:cliente?.cidade, clienteTelefone:cliente?.telefone,
         motoristaId, motoristaNome:motorista?.nome, status, observacoes:obs||''
@@ -1298,6 +1343,7 @@ document.getElementById('btn-salvar-entrega').addEventListener('click', async ()
         const idx = demoDB.entregas.findIndex(x=>x.id===editandoEntregaId);
         if(idx>-1){
           demoDB.entregas[idx] = { ...demoDB.entregas[idx], ...payload, dataAgendada: fakeTs(data ? new Date(data) : demoDB.entregas[idx].dataAgendada.toDate()) };
+          if(statusMudou) demoDB.entregas[idx].timeline = [...(demoDB.entregas[idx].timeline||[]), {status, data: fakeTs(new Date())}];
         }
         refreshDemoCaches();
         toast('Entrega atualizada! (demo)', 'ok');
@@ -1305,6 +1351,7 @@ document.getElementById('btn-salvar-entrega').addEventListener('click', async ()
         return;
       }
       if(data) payload.dataAgendada = firebase.firestore.Timestamp.fromDate(new Date(data));
+      if(statusMudou) payload.timeline = firebase.firestore.FieldValue.arrayUnion({ status, data: new Date() });
       await db.collection('entregas').doc(editandoEntregaId).update(payload);
       addLog(`Entrega NF ${n.nf} editada.`);
       toast('Entrega atualizada!', 'ok');
@@ -1332,13 +1379,15 @@ document.getElementById('btn-salvar-entrega').addEventListener('click', async ()
     }
 
     const batch = db.batch();
+    const empresaId = tenantConfigCache.empresaId || currentUser.uid;
     notas.forEach(n=>{
       const ref = db.collection('entregas').doc();
       batch.set(ref, {
+        empresaId,
         notaFiscal:n.nf, serie:n.serie||'1', clienteId, clienteNome:cliente?.nome, clienteEndereco:cliente?.endereco, clienteCidade:cliente?.cidade, clienteTelefone:cliente?.telefone,
         motoristaId, motoristaNome:motorista?.nome, status, observacoes:obs||'',
         dataAgendada: data ? firebase.firestore.Timestamp.fromDate(new Date(data)) : firebase.firestore.FieldValue.serverTimestamp(),
-        timeline: [{status:'aguardando', data: new Date()}]
+        timeline: [{status, data: new Date()}]
       });
     });
     await batch.commit();
@@ -1357,6 +1406,8 @@ document.getElementById('input-planilha-entregas').addEventListener('change', as
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
     if(!rows.length){ toast('Planilha vazia.', 'err'); return; }
     let count=0;
+    const empresaId = tenantConfigCache.empresaId || currentUser.uid;
+    const batchImport = DEMO_MODE ? null : db.batch();
     rows.forEach(row=>{
       const nf = row.nf || row.NF || row.nota || row.Nota;
       const clienteNome = row.cliente || row.Cliente;
@@ -1365,14 +1416,23 @@ document.getElementById('input-planilha-entregas').addEventListener('change', as
       const cliente = clientesCache.find(c=> c.nome.toLowerCase() === String(clienteNome).toLowerCase());
       const motorista = motoristasCache.find(m=> m.nome.toLowerCase() === String(motoristaNome||'').toLowerCase());
       const novaEntrega = {
+        empresaId,
         notaFiscal:String(nf), serie:'1', clienteId: cliente?.id||null, clienteNome: cliente?.nome||clienteNome,
         motoristaId: motorista?.id||null, motoristaNome: motorista?.nome||motoristaNome||'—',
-        status:'aguardando', observacoes:'', dataAgendada: fakeTs(new Date()), timeline:[{status:'aguardando', data:fakeTs(new Date())}]
+        status:'aguardando', observacoes:'', timeline:[{status:'aguardando', data: DEMO_MODE ? fakeTs(new Date()) : new Date()}]
       };
-      if(DEMO_MODE){ novaEntrega.id='en'+(demoIdSeq++); demoDB.entregas.unshift(novaEntrega); count++; }
+      if(DEMO_MODE){
+        novaEntrega.id='en'+(demoIdSeq++);
+        novaEntrega.dataAgendada = fakeTs(new Date());
+        demoDB.entregas.unshift(novaEntrega);
+      }else{
+        novaEntrega.dataAgendada = firebase.firestore.FieldValue.serverTimestamp();
+        batchImport.set(db.collection('entregas').doc(), novaEntrega);
+      }
       count++;
     });
     if(DEMO_MODE) refreshDemoCaches();
+    else await batchImport.commit();
     toast(`${count} entrega(s) importada(s) com sucesso!`, 'ok');
   }catch(err){ toast('Erro ao ler planilha. Use colunas: nf, cliente, motorista.', 'err'); }
   e.target.value='';
@@ -1381,7 +1441,16 @@ document.getElementById('input-planilha-entregas').addEventListener('change', as
 function abrirDetalheEntrega(id){
   const e = entregasCache.find(x=>x.id===id); if(!e) return;
   const body = document.getElementById('detalhe-entrega-body');
+  const podeReatribuir = e.status==='aguardando' || e.status==='em_rota';
   body.innerHTML = `
+    ${podeReatribuir ? `
+    <div class="detail-item" style="margin-bottom:14px; display:flex; gap:10px; align-items:flex-end;">
+      <div style="flex:1;">
+        <div class="l" style="margin-bottom:6px;">Reatribuir para outro motorista</div>
+        <select id="reatribuir-motorista-select" style="width:100%; padding:9px 10px; border:1px solid var(--border); border-radius:8px;"></select>
+      </div>
+      <button class="btn btn-primary btn-sm" id="btn-confirmar-reatribuicao">Reatribuir</button>
+    </div>` : ''}
     <div class="detail-grid">
       <div class="detail-item"><div class="l">Nota Fiscal</div><div class="v">${e.notaFiscal} / série ${e.serie}</div></div>
       <div class="detail-item"><div class="l">Status</div><div class="v"><span class="badge badge-${e.status}">${statusLabel(e.status)}</span></div></div>
@@ -1404,7 +1473,37 @@ function abrirDetalheEntrega(id){
     <div class="l" style="margin-top:16px; margin-bottom:4px;">Linha do tempo</div>
     <ul class="timeline">${(e.timeline||[]).map(t=>`<li><span class="t-time">${fmtDataHora(t.data)}</span><span>${statusLabel(t.status)}</span></li>`).join('') || '<li>Sem histórico.</li>'}</ul>
   `;
+  if(podeReatribuir){
+    const sel = document.getElementById('reatribuir-motorista-select');
+    sel.innerHTML = motoristasCache.map(m=>`<option value="${m.id}" ${m.id===e.motoristaId?'selected':''}>${m.nome}</option>`).join('');
+    document.getElementById('btn-confirmar-reatribuicao').addEventListener('click', ()=>reatribuirEntrega(e.id, sel.value));
+  }
   openModal('modal-detalhe-entrega');
+}
+
+async function reatribuirEntrega(entregaId, novoMotoristaId){
+  const atual = entregasCache.find(x=>x.id===entregaId);
+  if(!atual || atual.motoristaId === novoMotoristaId){ closeModal('modal-detalhe-entrega'); return; }
+  const novoMotorista = motoristasCache.find(m=>m.id===novoMotoristaId);
+  if(!novoMotorista){ toast('Selecione um motorista válido.', 'err'); return; }
+  try{
+    if(DEMO_MODE){
+      const idx = demoDB.entregas.findIndex(x=>x.id===entregaId);
+      if(idx>-1){ demoDB.entregas[idx].motoristaId = novoMotoristaId; demoDB.entregas[idx].motoristaNome = novoMotorista.nome; }
+      refreshDemoCaches();
+      toast(`Entrega reatribuída para ${novoMotorista.nome}. (demo)`, 'ok');
+      closeModal('modal-detalhe-entrega');
+      return;
+    }
+    await db.collection('entregas').doc(entregaId).update({
+      motoristaId: novoMotoristaId,
+      motoristaNome: novoMotorista.nome,
+      timeline: firebase.firestore.FieldValue.arrayUnion({ status: atual.status, data: new Date(), obs: `Reatribuída para ${novoMotorista.nome}` })
+    });
+    addLog(`Entrega NF ${atual.notaFiscal} reatribuída de ${atual.motoristaNome} para ${novoMotorista.nome}.`);
+    toast(`Entrega reatribuída para ${novoMotorista.nome}!`, 'ok');
+    closeModal('modal-detalhe-entrega');
+  }catch(e){ toast('Erro ao reatribuir: '+e.message, 'err'); }
 }
 
 /* ---- DASHBOARD ---- */
@@ -1442,6 +1541,25 @@ document.querySelectorAll('.kpi-card').forEach(card=>{
   });
 });
 
+/* ---- EXPORTAÇÃO DO DASHBOARD ---- */
+document.getElementById('btn-exportar-excel').addEventListener('click', ()=>{
+  if(!dashboardListaAtual.length){ toast('Não há entregas no período para exportar.', 'err'); return; }
+  const linhas = dashboardListaAtual.map(e=>({
+    'Nota Fiscal': e.notaFiscal, 'Série': e.serie, 'Cliente': e.clienteNome, 'Cidade': e.clienteCidade||'',
+    'Motorista': e.motoristaNome, 'Status': statusLabel(e.status),
+    'Data agendada': fmtData(e.dataAgendada), 'Data finalização': e.dataFinalizacao ? fmtDataHora(e.dataFinalizacao) : '',
+    'Recebedor': e.recebedorNome||'', 'Observações': e.observacoes||''
+  }));
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(linhas);
+  XLSX.utils.book_append_sheet(wb, ws, 'Entregas');
+  XLSX.writeFile(wb, `dashboard-entregas-${new Date().toISOString().slice(0,10)}.xlsx`);
+});
+document.getElementById('btn-exportar-pdf').addEventListener('click', ()=>{
+  if(!dashboardListaAtual.length){ toast('Não há entregas no período para exportar.', 'err'); return; }
+  window.print();
+});
+
 function renderDashboard(){
   const range = periodoPresetToRange(document.getElementById('periodo-preset').value);
   document.getElementById('period-label-text').textContent = range.label;
@@ -1477,6 +1595,47 @@ function renderDashboard(){
   document.getElementById('lista-entregas-titulo').textContent = tituloFiltro;
   document.getElementById('lista-entregas-count').textContent = filtradas.length;
   document.getElementById('tbl-ultimas').innerHTML = filtradas.length ? filtradas.map(e=>`<tr><td style="font-family:var(--mono);font-size:12px;">${e.notaFiscal}</td><td>${e.clienteNome}</td><td>${e.motoristaNome}</td><td><span class="badge badge-${e.status}">${statusLabel(e.status)}</span></td><td>${fmtData(e.dataFinalizacao||e.dataAgendada)}</td></tr>`).join('') : `<tr><td colspan="5" style="text-align:center; color:var(--text-faint);">Sem entregas para este filtro no período</td></tr>`;
+
+  // Tempo médio "em rota" -> "entregue" por motorista (baseado na linha do tempo de cada entrega)
+  const temposPorMotorista = {};
+  list.forEach(e=>{
+    if(e.status !== 'entregue' || !Array.isArray(e.timeline)) return;
+    const tEmRota = e.timeline.find(t=>t.status==='em_rota');
+    const tEntregue = [...e.timeline].reverse().find(t=>t.status==='entregue');
+    if(!tEmRota || !tEntregue) return;
+    const dEmRota = tEmRota.data?.toDate ? tEmRota.data.toDate() : new Date(tEmRota.data);
+    const dEntregue = tEntregue.data?.toDate ? tEntregue.data.toDate() : new Date(tEntregue.data);
+    const ms = dEntregue - dEmRota;
+    if(!(ms > 0)) return;
+    const nome = e.motoristaNome || '—';
+    if(!temposPorMotorista[nome]) temposPorMotorista[nome] = { total:0, count:0 };
+    temposPorMotorista[nome].total += ms;
+    temposPorMotorista[nome].count++;
+  });
+  const rankTempo = Object.entries(temposPorMotorista)
+    .map(([nome,v])=>({ nome, horas: (v.total/v.count)/(1000*60*60), count:v.count }))
+    .sort((a,b)=>a.horas-b.horas);
+  document.getElementById('tempo-medio-motoristas').innerHTML = rankTempo.length
+    ? rankTempo.map(r=>`<li><span>${r.nome} <span style="color:var(--text-faint); font-size:11px;">(${r.count} entrega${r.count>1?'s':''})</span></span><b>${r.horas<24 ? r.horas.toFixed(1)+'h' : (r.horas/24).toFixed(1)+' dias'}</b></li>`).join('')
+    : '<li style="color:var(--text-faint);">Sem dados suficientes ainda — precisa de entregas com status "Em rota" registrado antes de finalizar</li>';
+
+  // Taxa de sucesso por cliente/região (cidade)
+  const porCliente = {};
+  list.forEach(e=>{
+    const key = e.clienteNome || '—';
+    if(!porCliente[key]) porCliente[key] = { total:0, sucesso:0, cidade: e.clienteCidade || '—' };
+    porCliente[key].total++;
+    if(e.status==='entregue') porCliente[key].sucesso++;
+  });
+  const taxasCliente = Object.entries(porCliente)
+    .map(([nome,v])=>({ nome, cidade:v.cidade, taxa: v.total ? Math.round((v.sucesso/v.total)*100) : 0, total:v.total }))
+    .sort((a,b)=>a.taxa-b.taxa);
+  document.getElementById('tbl-taxa-sucesso').innerHTML = taxasCliente.length
+    ? taxasCliente.map(t=>`<tr><td>${t.nome}</td><td>${t.cidade}</td><td><span class="badge ${t.taxa>=80?'badge-entregue':t.taxa>=50?'badge-em_rota':'badge-nao_entregue'}">${t.taxa}%</span></td><td>${t.total}</td></tr>`).join('')
+    : `<tr><td colspan="4" style="text-align:center; color:var(--text-faint);">Sem entregas no período</td></tr>`;
+
+  dashboardListaAtual = list;
+  dashboardPeriodoLabel = range.label;
 }
 
 /* ---- MOTORISTAS ---- */
@@ -1557,7 +1716,8 @@ document.getElementById('btn-salvar-motorista').addEventListener('click', async 
   const modelo = document.getElementById('mot-modelo').value.trim();
   const status = document.getElementById('mot-status').value;
   if(!nome || !cpf){ toast('Informe nome e CPF.', 'err'); return; }
-  const payload = { nome, cpf, rg, telefone, email, placa, modelo, status };
+  const empresaId = tenantConfigCache.empresaId || currentUser.uid;
+  const payload = { nome, cpf, rg, telefone, email, placa, modelo, status, empresaId };
 
   const btn = document.getElementById('btn-salvar-motorista');
   btn.disabled = true; btn.textContent='Salvando...';
@@ -1600,7 +1760,7 @@ document.getElementById('btn-salvar-motorista').addEventListener('click', async 
 
     // usamos o mesmo UID do login como ID dos documentos, para as entregas baterem certinho com o motorista
     await Promise.all([
-      db.collection('usuarios').doc(uid).set({ nome, email, role:'motorista', telefone: telefone||null }),
+      db.collection('usuarios').doc(uid).set({ nome, email, role:'motorista', telefone: telefone||null, empresaId }),
       db.collection('motoristas').doc(uid).set(payload)
     ]);
 
@@ -1662,7 +1822,7 @@ document.getElementById('btn-salvar-cliente').addEventListener('click', async ()
   const telefone = document.getElementById('cli-telefone').value.trim();
   const responsavel = document.getElementById('cli-responsavel').value.trim();
   if(!nome){ toast('Informe o nome da empresa.', 'err'); return; }
-  const payload = { nome, cnpj, endereco, cidade, estado, telefone, responsavel };
+  const payload = { nome, cnpj, endereco, cidade, estado, telefone, responsavel, empresaId: tenantConfigCache.empresaId || currentUser.uid };
   try{
     if(DEMO_MODE){
       if(editandoClienteId){ const idx = demoDB.clientes.findIndex(x=>x.id===editandoClienteId); demoDB.clientes[idx] = {...demoDB.clientes[idx], ...payload}; }
@@ -1685,7 +1845,7 @@ async function loadConfig(){
     let d;
     if(DEMO_MODE){ d = demoDB.empresa; }
     else{
-      const doc = await db.collection('config').doc('geral').get();
+      const doc = await db.collection('config').doc(tenantConfigCache.empresaId || currentUser.uid).get();
       if(!doc.exists){ atualizarBrandingSidebar(null); return; }
       d = doc.data();
     }
@@ -1709,12 +1869,62 @@ document.getElementById('btn-salvar-plano').addEventListener('click', async ()=>
   btn.disabled = true; btn.textContent = 'Salvando...';
   try{
     if(DEMO_MODE){ toast('Em modo demonstração o plano não é salvo de verdade.', 'ok'); return; }
-    await db.collection('config').doc('geral').set({ planoNome, planoAtivo }, {merge:true});
+    await db.collection('config').doc(tenantConfigCache.empresaId || currentUser.uid).set({ planoNome, planoAtivo }, {merge:true});
     tenantConfigCache.planoNome = planoNome; tenantConfigCache.planoAtivo = planoAtivo;
     await checkTrialStatus();
     toast('Assinatura atualizada!', 'ok');
   }catch(e){ toast('Erro: '+e.message, 'err'); }
   finally{ btn.disabled=false; btn.textContent='Salvar assinatura'; }
+});
+
+document.getElementById('btn-migrar-dados').addEventListener('click', async ()=>{
+  if(DEMO_MODE){ toast('Não é necessário migrar nada no modo demonstração.', 'ok'); return; }
+  const btn = document.getElementById('btn-migrar-dados');
+  const resultado = document.getElementById('migracao-resultado');
+  btn.disabled = true; btn.textContent = 'Migrando...';
+  resultado.textContent = '';
+  const empresaId = currentUser.uid;
+  let totalMigrado = 0;
+  try{
+    // 1) Garante que meu próprio perfil tem empresaId
+    await db.collection('usuarios').doc(empresaId).set({ empresaId }, {merge:true});
+
+    // 2) Migra config/geral -> config/{empresaId}, se ainda não existir
+    const configGeral = await db.collection('config').doc('geral').get();
+    const configEmpresa = await db.collection('config').doc(empresaId).get();
+    if(configGeral.exists && !configEmpresa.exists){
+      await db.collection('config').doc(empresaId).set({ ...configGeral.data(), empresaId }, {merge:true});
+    }
+
+    // 3) Backfill de empresaId em motoristas, clientes e entregas sem esse campo
+    for(const nomeColecao of ['motoristas','clientes','entregas']){
+      const snap = await db.collection(nomeColecao).get();
+      const pendentes = snap.docs.filter(d => !d.data().empresaId);
+      for(let i=0; i<pendentes.length; i+=400){ // lotes de até 400 (limite do batch é 500)
+        const lote = pendentes.slice(i, i+400);
+        const batch = db.batch();
+        lote.forEach(d => batch.update(d.ref, { empresaId }));
+        await batch.commit();
+        totalMigrado += lote.length;
+      }
+      // atualiza também o empresaId dos motoristas dentro de "usuarios" (perfis de login)
+      if(nomeColecao === 'motoristas'){
+        for(const d of pendentes){
+          await db.collection('usuarios').doc(d.id).set({ empresaId }, {merge:true}).catch(()=>{});
+        }
+      }
+    }
+
+    resultado.textContent = `Migração concluída! ${totalMigrado} registro(s) atualizado(s).`;
+    toast('Migração concluída com sucesso!', 'ok');
+    tenantConfigCache.empresaId = empresaId;
+    if(!listenersAttached){ attachRealtimeListeners(); listenersAttached = true; }
+  }catch(e){
+    resultado.textContent = 'Erro na migração: ' + e.message;
+    toast('Erro na migração: ' + e.message, 'err');
+  }finally{
+    btn.disabled = false; btn.textContent = 'Migrar meus dados antigos';
+  }
 });
 function atualizarBrandingSidebar(d){
   document.getElementById('admin-name').textContent = (d && d.nome) ? d.nome : 'Minha empresa';
@@ -1745,7 +1955,7 @@ document.getElementById('btn-salvar-config').addEventListener('click', async ()=
       await ref.putString(cfgLogoBase64, 'data_url');
       payload.logo = await ref.getDownloadURL();
     }
-    await db.collection('config').doc('geral').set(payload, {merge:true});
+    await db.collection('config').doc(tenantConfigCache.empresaId || currentUser.uid).set(payload, {merge:true});
     toast('Configurações salvas!', 'ok');
     loadConfig();
   }catch(e){ toast('Erro: '+e.message, 'err'); }

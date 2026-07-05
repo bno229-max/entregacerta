@@ -21,6 +21,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.3/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -671,6 +672,8 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 const storage = firebase.storage();
 const TRIAL_DIAS = 7;
+// Gere em: Firebase Console → Configurações do projeto → Cloud Messaging → Certificados Web Push
+const VAPID_KEY = 'SUBSTITUA_PELA_SUA_VAPID_KEY';
 
 /* =========================================================
    STATE
@@ -964,11 +967,11 @@ function attachRealtimeListeners(){
     renderAllAdminViews(); renderMobileHome();
   }, err=>{ console.error(err); toast('Erro ao carregar entregas: '+err.message, 'err'); });
 
-  db.collection('motoristas').orderBy('nome').onSnapshot(snap=>{
-    motoristasCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+  db.collection('motoristas').where('empresaId', '==', currentProfile.empresaId || null).onSnapshot(snap=>{
+    motoristasCache = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
     renderMotoristas(); populateSelects();
   }, err=>console.error(err));
-  db.collection('clientes').orderBy('nome').onSnapshot(snap=>{
+  db.collection('clientes').where('empresaId', '==', currentProfile.empresaId || null).onSnapshot(snap=>{
     clientesCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
     renderClientes(); populateSelects();
   }, err=>console.error(err));
@@ -1402,23 +1405,42 @@ async function initMobileApp(){
   showMobView('home');
   renderMobileHome();
   solicitarPermissaoLocalizacaoDoDia();
+  configurarNotificacoesPush();
+}
+
+async function configurarNotificacoesPush(){
+  try{
+    if(!('Notification' in window) || !firebase.messaging.isSupported()) return;
+    let permissao = Notification.permission;
+    if(permissao === 'default'){ permissao = await Notification.requestPermission(); }
+    if(permissao !== 'granted') return;
+
+    const messaging = firebase.messaging();
+    const token = await messaging.getToken({ vapidKey: VAPID_KEY }).catch(err=>{ console.warn('Não foi possível obter o token de notificação:', err); return null; });
+    if(token && currentUser){
+      await db.collection('usuarios').doc(currentUser.uid).update({ fcmToken: token }).catch(()=>{});
+    }
+    messaging.onMessage((payload)=>{
+      toast((payload.notification?.title || 'Nova notificação') + ': ' + (payload.notification?.body || ''), 'ok');
+    });
+  }catch(e){ console.warn('Notificações push não configuradas:', e); }
 }
 
 async function checkEmpresaAtiva(){
   if(DEMO_MODE) return true;
   try{
-    const doc = await db.collection('config').doc('geral').get();
+    const empresaId = currentProfile.empresaId;
+    if(!empresaId) return true; // conta antiga, sem empresaId ainda (migração pendente do lado do admin)
+    const doc = await db.collection('config').doc(empresaId).get();
     if(!doc.exists || !doc.data().trialStartedAt) return true; // ainda nem começou a contar
     const d = doc.data();
 
     // Assinatura ativa via extensão "Run Payments with Stripe"?
-    if(d.ownerUid){
-      try{
-        const snap = await db.collection('customers').doc(d.ownerUid).collection('subscriptions')
-          .where('status', 'in', ['trialing', 'active']).limit(1).get();
-        if(!snap.empty) return true;
-      }catch(e){ console.error('Erro ao consultar assinatura:', e); }
-    }
+    try{
+      const snap = await db.collection('customers').doc(empresaId).collection('subscriptions')
+        .where('status', 'in', ['trialing', 'active']).limit(1).get();
+      if(!snap.empty) return true;
+    }catch(e){ console.error('Erro ao consultar assinatura:', e); }
 
     if(d.planoAtivo) return true; // ativação manual (fallback)
 
