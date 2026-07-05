@@ -1,0 +1,11 @@
+{
+  "name": "functions",
+  "description": "Envia notificação push (FCM) ao motorista quando uma entrega é atribuída a ele",
+  "engines": { "node": "20" },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^12.6.0",
+    "firebase-functions": "^5.1.1"
+  },
+  "private": true
+}

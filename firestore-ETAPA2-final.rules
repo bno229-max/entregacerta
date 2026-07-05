@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function meuPerfil() { return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data; }
+    function myRole() { return meuPerfil().role; }
+    function minhaEmpresa() { return meuPerfil().empresaId; }
+    function isAdmin() { return signedIn() && myRole() == 'admin'; }
+    function isMotorista() { return signedIn() && myRole() == 'motorista'; }
+
+    // Documento pertence à minha empresa?
+    function daMinhaEmpresa(dados) {
+      return dados.empresaId == minhaEmpresa();
+    }
+
+    // Perfil do usuário logado (admin ou motorista)
+    match /usuarios/{uid} {
+      allow read:   if signedIn() && (request.auth.uid == uid || (isAdmin() && daMinhaEmpresa(resource.data)));
+      allow create: if signedIn() && (request.auth.uid == uid || (isAdmin() && request.resource.data.empresaId == minhaEmpresa()));
+      allow update: if signedIn() && (request.auth.uid == uid || (isAdmin() && daMinhaEmpresa(resource.data)));
+      allow delete: if isAdmin() && daMinhaEmpresa(resource.data);
+    }
+
+    // Cadastro de motoristas (dados administrativos: CPF, veículo, etc.)
+    match /motoristas/{id} {
+      allow read:   if signedIn() && daMinhaEmpresa(resource.data);
+      allow create: if isAdmin() && request.resource.data.empresaId == minhaEmpresa();
+      allow update: if isAdmin() && daMinhaEmpresa(resource.data);
+      allow delete: if isAdmin() && daMinhaEmpresa(resource.data);
+    }
+
+    // Cadastro de clientes
+    match /clientes/{id} {
+      allow read:   if signedIn() && daMinhaEmpresa(resource.data);
+      allow create: if isAdmin() && request.resource.data.empresaId == minhaEmpresa();
+      allow update: if isAdmin() && daMinhaEmpresa(resource.data);
+      allow delete: if isAdmin() && daMinhaEmpresa(resource.data);
+    }
+
+    // Entregas: admin vê/edita as da própria empresa; motorista só as atribuídas a ele
+    match /entregas/{id} {
+      allow read:   if (isAdmin() && daMinhaEmpresa(resource.data)) || (isMotorista() && resource.data.motoristaId == request.auth.uid);
+      allow create: if isAdmin() && request.resource.data.empresaId == minhaEmpresa();
+      allow update: if (isAdmin() && daMinhaEmpresa(resource.data)) || (isMotorista() && resource.data.motoristaId == request.auth.uid);
+      allow delete: if isAdmin() && daMinhaEmpresa(resource.data);
+    }
+
+    // Configurações do tenant — cada empresa tem seu próprio documento,
+    // com ID igual ao UID do admin (o "geral" antigo fica migrado para lá)
+    match /config/{empresaId} {
+      allow read:  if signedIn() && empresaId == minhaEmpresa();
+      allow write: if isAdmin() && empresaId == minhaEmpresa();
+    }
+
+    // Logs de auditoria: qualquer usuário logado pode criar, só admin da própria empresa lê
+    match /logs/{id} {
+      allow read:            if isAdmin() && daMinhaEmpresa(resource.data);
+      allow create:          if signedIn();
+      allow update, delete:  if false;
+    }
+
+    // ---- Extensão "Run Payments with Stripe" ----
+    match /products/{id} {
+      allow read: if true;
+      match /prices/{id} { allow read: if true; }
+      match /tax_rates/{id} { allow read: if true; }
+    }
+    match /customers/{uid} {
+      allow read: if request.auth.uid == uid;
+      match /checkout_sessions/{id} {
+        allow read, write: if request.auth.uid == uid;
+      }
+      match /subscriptions/{id} {
+        allow read: if signedIn();
+      }
+      match /payments/{id} {
+        allow read: if request.auth.uid == uid;
+      }
+    }
+  }
+}

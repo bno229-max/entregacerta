@@ -1,0 +1,72 @@
+rules_version = '2';
+// =========================================================
+// ETAPA 1 de 2 — regras "de transição"
+// Use esta versão AGORA, para poder rodar a migração de dados
+// antigos (Configurações → Migrar meus dados antigos).
+// Depois de migrar e conferir que todos os documentos têm
+// "empresaId" preenchido, troque para o arquivo
+// firestore-ETAPA2-final.rules (isolamento total entre empresas).
+// =========================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function myRole() { return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.role; }
+    function isAdmin() { return signedIn() && myRole() == 'admin'; }
+    function isMotorista() { return signedIn() && myRole() == 'motorista'; }
+
+    match /usuarios/{uid} {
+      allow read:   if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow update: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /motoristas/{id} {
+      allow read:  if isAdmin() || isMotorista();
+      allow write: if isAdmin();
+    }
+
+    match /clientes/{id} {
+      allow read:  if isAdmin() || isMotorista();
+      allow write: if isAdmin();
+    }
+
+    match /entregas/{id} {
+      allow read:   if isAdmin() || (isMotorista() && resource.data.motoristaId == request.auth.uid);
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (isMotorista() && resource.data.motoristaId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    match /config/{id} {
+      allow read:  if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /logs/{id} {
+      allow read:            if isAdmin();
+      allow create:          if signedIn();
+      allow update, delete:  if false;
+    }
+
+    // ---- Extensão "Run Payments with Stripe" ----
+    match /products/{id} {
+      allow read: if true;
+      match /prices/{id} { allow read: if true; }
+      match /tax_rates/{id} { allow read: if true; }
+    }
+    match /customers/{uid} {
+      allow read: if request.auth.uid == uid;
+      match /checkout_sessions/{id} {
+        allow read, write: if request.auth.uid == uid;
+      }
+      match /subscriptions/{id} {
+        allow read: if signedIn();
+      }
+      match /payments/{id} {
+        allow read: if request.auth.uid == uid;
+      }
+    }
+  }
+}
