@@ -32,10 +32,9 @@ try{
   });
 }catch(e){ /* messaging pode não estar disponível em navegadores sem suporte a push */ }
 
-const CACHE_NAME = 'certifydelivery-motorista-v1';
+const CACHE_NAME = 'certifydelivery-motorista-v3';
 const APP_SHELL = [
   './',
-  './index.html',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png'
@@ -69,7 +68,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Para o restante (shell do app, fontes, ícones): cache-first com fallback de rede.
+  // Navegação (abrir a página em si): sempre busca da rede primeiro.
+  // Isso evita guardar em cache uma resposta "redirecionada" (ex: /motorista/ -> /motorista/index.html),
+  // que o Chrome recusa reutilizar depois — foi exatamente essa a causa do erro de instalação.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match('./'))
+    );
+    return;
+  }
+
+  // Para o restante (fontes, ícones, manifest): cache-first com fallback de rede.
   event.respondWith(
     caches.match(event.request).then((cached) => {
       return cached || fetch(event.request).catch(() => cached);

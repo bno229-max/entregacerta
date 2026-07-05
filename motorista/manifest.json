@@ -2,7 +2,7 @@
   "name": "Certify Delivery - App do Motorista",
   "short_name": "Certify Delivery",
   "description": "Confirmação digital de entrega (POD) para motoristas",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#F5F6F8",
