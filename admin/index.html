@@ -525,28 +525,9 @@ p.auth-sub{color:var(--text-dim); font-size:13.5px; margin-bottom:24px; line-hei
         </div>
 
         <div class="panel-card" style="max-width:560px; margin-top:16px;">
-          <h4>Assinatura</h4>
-          <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:16px;">Depois de contratar um plano no Stripe, selecione-o aqui e marque como ativo para liberar o acesso completo.</p>
-          <div class="field"><label>Plano contratado</label>
-            <select id="cfg-plano-nome">
-              <option value="">Nenhum (em teste grátis)</option>
-              <option value="starter">Starter — até 3 motoristas</option>
-              <option value="growth">Growth — até 5 motoristas</option>
-              <option value="business">Business — até 10 motoristas</option>
-            </select>
-          </div>
-          <div class="field" style="display:flex; align-items:center; gap:10px;">
-            <input type="checkbox" id="cfg-plano-ativo" style="width:auto;">
-            <label for="cfg-plano-ativo" style="margin:0;">Assinatura ativa (libera o acesso após o teste grátis)</label>
-          </div>
-          <button class="btn btn-primary" id="btn-salvar-plano">Salvar assinatura</button>
-        </div>
-
-        <div class="panel-card" style="max-width:560px; margin-top:16px;">
-          <h4>Migração de dados</h4>
-          <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:14px;">Se você usava o sistema antes da separação por empresa, clique aqui uma vez para vincular seus motoristas, clientes e entregas já cadastrados à sua conta. É seguro clicar mais de uma vez.</p>
-          <button class="btn btn-ghost" id="btn-migrar-dados">Migrar meus dados antigos</button>
-          <div id="migracao-resultado" style="font-size:12.5px; color:var(--text-dim); margin-top:10px;"></div>
+          <h4>Plano atual</h4>
+          <p style="font-size:12.5px; color:var(--text-dim); margin-bottom:4px;">A ativação é automática assim que o pagamento é confirmado no Stripe.</p>
+          <div id="plano-atual-info" style="margin-top:14px; font-size:14px; font-weight:600;">Carregando...</div>
         </div>
       </section>
     </main>
@@ -692,6 +673,14 @@ p.auth-sub{color:var(--text-dim); font-size:13.5px; margin-bottom:24px; line-hei
 </div>
 
 <!-- ============ MODAL: MOTORISTA ============ -->
+<div class="modal-backdrop" id="modal-limite-plano">
+  <div class="modal" style="text-align:center;">
+    <div class="modal-header"><h3>Limite do plano atingido</h3><button class="modal-close" data-close="modal-limite-plano"><i class="fa-solid fa-xmark"></i></button></div>
+    <p id="limite-plano-mensagem" style="color:var(--text-dim); font-size:13.5px; margin-bottom:20px;"></p>
+    <div id="limite-plano-botoes" style="display:flex; flex-direction:column; gap:10px;"></div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="modal-motorista">
   <div class="modal"><div class="modal-header"><h3 id="modal-motorista-title">Cadastrar motorista</h3><button class="modal-close" data-close="modal-motorista"><i class="fa-solid fa-xmark"></i></button></div>
     <div class="field"><label>Nome</label><input type="text" id="mot-nome"></div>
@@ -739,6 +728,8 @@ const storage = firebase.storage();
    ========================================================= */
 const TRIAL_DIAS = 7;
 const LIMITES_MOTORISTAS = { starter: 3, growth: 5, business: 10 };
+const LIMITES_ENTREGAS_MES = { starter: 1000, growth: 1500, business: 2000 };
+const PRECOS_PLANOS = { starter: 'R$ 99,90/mês', growth: 'R$ 149,90/mês', business: 'R$ 199,90/mês' };
 const STRIPE_PRICE_IDS = {
   starter: 'price_1TpehIB3QJPG6mfQTpqMwljT',
   growth: 'price_1TpeiaB3QJPG6mfQtIdIvk5n',
@@ -1084,14 +1075,14 @@ async function checkTrialStatus(){
     if(assinatura){
       tenantConfigCache.planoAtivo = true;
       tenantConfigCache.planoNome = assinatura.role || tenantConfigCache.planoNome || null;
-      document.getElementById('trial-badge').classList.add('hidden');
+      mostrarBadgePlanoAtivo();
       document.getElementById('trial-expired-screen').style.display='none';
       return true;
     }
 
-    // 2) Ativação manual (fallback, em Configurações → Assinatura)
+    // 2) Ativação manual (fallback de suporte, definida direto no Firestore se necessário)
     if(d.planoAtivo){
-      document.getElementById('trial-badge').classList.add('hidden');
+      mostrarBadgePlanoAtivo();
       document.getElementById('trial-expired-screen').style.display='none';
       return true;
     }
@@ -1117,6 +1108,35 @@ async function checkTrialStatus(){
 }
 
 // Consulta customers/{uid}/subscriptions procurando uma assinatura trialing/active
+const NOMES_PLANOS = { starter:'Starter', growth:'Growth', business:'Business' };
+
+function contarEntregasMesAtual(){
+  const agora = new Date();
+  return entregasCache.filter(e=>{
+    if(!e.dataAgendada) return false;
+    const d = e.dataAgendada.toDate ? e.dataAgendada.toDate() : new Date(e.dataAgendada);
+    return d.getMonth() === agora.getMonth() && d.getFullYear() === agora.getFullYear();
+  }).length;
+}
+
+function mostrarBannerUpgrade(mensagem){
+  document.getElementById('limite-plano-mensagem').textContent = mensagem;
+  const planoAtual = tenantConfigCache.planoNome;
+  const botoesHtml = Object.keys(NOMES_PLANOS)
+    .filter(p => p !== planoAtual)
+    .map(p => `<button class="btn btn-primary" onclick="closeModal('modal-limite-plano'); iniciarCheckoutStripe('${p}');">${NOMES_PLANOS[p]} — ${PRECOS_PLANOS[p]}</button>`)
+    .join('');
+  document.getElementById('limite-plano-botoes').innerHTML = botoesHtml || '<p style="color:var(--text-faint); font-size:12.5px;">Fale com o suporte para ajustar seu plano.</p>';
+  openModal('modal-limite-plano');
+}
+
+function mostrarBadgePlanoAtivo(){
+  const badge = document.getElementById('trial-badge');
+  const nome = NOMES_PLANOS[tenantConfigCache.planoNome] || tenantConfigCache.planoNome || 'ativo';
+  badge.classList.remove('hidden');
+  badge.innerHTML = `Plano: <b>${nome}</b>`;
+}
+
 async function buscarAssinaturaAtiva(uid){
   if(!uid) return null;
   try{
@@ -1157,7 +1177,7 @@ function attachRealtimeListeners(){
   const ehMotorista = currentProfile && currentProfile.role === 'motorista';
   const entregasQuery = ehMotorista
     ? db.collection('entregas').where('motoristaId', '==', currentUser.uid)
-    : db.collection('entregas').where('empresaId', '==', empresaId).orderBy('dataAgendada', 'desc');
+    : db.collection('entregas').where('empresaId', '==', empresaId);
 
   entregasQuery.onSnapshot(snap=>{
     entregasCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
@@ -1360,6 +1380,17 @@ document.getElementById('btn-salvar-entrega').addEventListener('click', async ()
     }
 
     // ---- CRIAÇÃO: uma ou mais notas fiscais ----
+    if(!DEMO_MODE){
+      const planoNome = tenantConfigCache.planoNome;
+      const limiteEntregas = LIMITES_ENTREGAS_MES[planoNome];
+      if(limiteEntregas){
+        const contagemAtual = contarEntregasMesAtual();
+        if(contagemAtual + notas.length > limiteEntregas){
+          mostrarBannerUpgrade(`Seu plano atual (${NOMES_PLANOS[planoNome]||planoNome}) permite no máximo ${limiteEntregas} entregas por mês (você já tem ${contagemAtual} este mês). Para cadastrar mais, atualize seu plano:`);
+          return;
+        }
+      }
+    }
     if(DEMO_MODE){
       notas.forEach(n=>{
         const payload = {
@@ -1405,6 +1436,20 @@ document.getElementById('input-planilha-entregas').addEventListener('change', as
     const wb = XLSX.read(data);
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
     if(!rows.length){ toast('Planilha vazia.', 'err'); return; }
+
+    if(!DEMO_MODE){
+      const planoNome = tenantConfigCache.planoNome;
+      const limiteEntregas = LIMITES_ENTREGAS_MES[planoNome];
+      if(limiteEntregas){
+        const contagemAtual = contarEntregasMesAtual();
+        if(contagemAtual + rows.length > limiteEntregas){
+          mostrarBannerUpgrade(`Seu plano atual (${NOMES_PLANOS[planoNome]||planoNome}) permite no máximo ${limiteEntregas} entregas por mês (você já tem ${contagemAtual} este mês). Para importar mais, atualize seu plano:`);
+          e.target.value='';
+          return;
+        }
+      }
+    }
+
     let count=0;
     const empresaId = tenantConfigCache.empresaId || currentUser.uid;
     const batchImport = DEMO_MODE ? null : db.batch();
@@ -1748,7 +1793,7 @@ document.getElementById('btn-salvar-motorista').addEventListener('click', async 
       const planoNome = tenantConfigCache.planoNome;
       const limite = LIMITES_MOTORISTAS[planoNome];
       if(limite && motoristasCache.length >= limite){
-        toast(`Seu plano atual permite no máximo ${limite} motoristas cadastrados. Faça upgrade de plano para cadastrar mais.`, 'err');
+        mostrarBannerUpgrade(`Seu plano atual (${NOMES_PLANOS[planoNome]||planoNome}) permite no máximo ${limite} motoristas cadastrados. Para cadastrar mais, atualize seu plano:`);
         return;
       }
     }
@@ -1854,78 +1899,23 @@ async function loadConfig(){
     document.getElementById('cfg-endereco').value = d.endereco||'';
     document.getElementById('cfg-email').value = d.email||'';
     document.getElementById('cfg-telefone').value = d.telefone||'';
-    document.getElementById('cfg-plano-nome').value = d.planoNome || '';
-    document.getElementById('cfg-plano-ativo').checked = !!d.planoAtivo;
     document.getElementById('empresa-sub').textContent = d.nome ? `${d.nome} · Visão geral das entregas` : 'Visão geral das entregas';
     const logoEl = document.getElementById('cfg-logo-preview');
     logoEl.innerHTML = d.logo ? `<img src="${d.logo}">` : `<i class="fa-solid fa-building"></i>`;
     atualizarBrandingSidebar(d);
+    atualizarPlanoAtualInfo();
   }catch(e){ console.error(e); }
 }
-document.getElementById('btn-salvar-plano').addEventListener('click', async ()=>{
-  const planoNome = document.getElementById('cfg-plano-nome').value || null;
-  const planoAtivo = document.getElementById('cfg-plano-ativo').checked;
-  const btn = document.getElementById('btn-salvar-plano');
-  btn.disabled = true; btn.textContent = 'Salvando...';
-  try{
-    if(DEMO_MODE){ toast('Em modo demonstração o plano não é salvo de verdade.', 'ok'); return; }
-    await db.collection('config').doc(tenantConfigCache.empresaId || currentUser.uid).set({ planoNome, planoAtivo }, {merge:true});
-    tenantConfigCache.planoNome = planoNome; tenantConfigCache.planoAtivo = planoAtivo;
-    await checkTrialStatus();
-    toast('Assinatura atualizada!', 'ok');
-  }catch(e){ toast('Erro: '+e.message, 'err'); }
-  finally{ btn.disabled=false; btn.textContent='Salvar assinatura'; }
-});
-
-document.getElementById('btn-migrar-dados').addEventListener('click', async ()=>{
-  if(DEMO_MODE){ toast('Não é necessário migrar nada no modo demonstração.', 'ok'); return; }
-  const btn = document.getElementById('btn-migrar-dados');
-  const resultado = document.getElementById('migracao-resultado');
-  btn.disabled = true; btn.textContent = 'Migrando...';
-  resultado.textContent = '';
-  const empresaId = currentUser.uid;
-  let totalMigrado = 0;
-  try{
-    // 1) Garante que meu próprio perfil tem empresaId
-    await db.collection('usuarios').doc(empresaId).set({ empresaId }, {merge:true});
-
-    // 2) Migra config/geral -> config/{empresaId}, se ainda não existir
-    const configGeral = await db.collection('config').doc('geral').get();
-    const configEmpresa = await db.collection('config').doc(empresaId).get();
-    if(configGeral.exists && !configEmpresa.exists){
-      await db.collection('config').doc(empresaId).set({ ...configGeral.data(), empresaId }, {merge:true});
-    }
-
-    // 3) Backfill de empresaId em motoristas, clientes e entregas sem esse campo
-    for(const nomeColecao of ['motoristas','clientes','entregas']){
-      const snap = await db.collection(nomeColecao).get();
-      const pendentes = snap.docs.filter(d => !d.data().empresaId);
-      for(let i=0; i<pendentes.length; i+=400){ // lotes de até 400 (limite do batch é 500)
-        const lote = pendentes.slice(i, i+400);
-        const batch = db.batch();
-        lote.forEach(d => batch.update(d.ref, { empresaId }));
-        await batch.commit();
-        totalMigrado += lote.length;
-      }
-      // atualiza também o empresaId dos motoristas dentro de "usuarios" (perfis de login)
-      if(nomeColecao === 'motoristas'){
-        for(const d of pendentes){
-          await db.collection('usuarios').doc(d.id).set({ empresaId }, {merge:true}).catch(()=>{});
-        }
-      }
-    }
-
-    resultado.textContent = `Migração concluída! ${totalMigrado} registro(s) atualizado(s).`;
-    toast('Migração concluída com sucesso!', 'ok');
-    tenantConfigCache.empresaId = empresaId;
-    if(!listenersAttached){ attachRealtimeListeners(); listenersAttached = true; }
-  }catch(e){
-    resultado.textContent = 'Erro na migração: ' + e.message;
-    toast('Erro na migração: ' + e.message, 'err');
-  }finally{
-    btn.disabled = false; btn.textContent = 'Migrar meus dados antigos';
+function atualizarPlanoAtualInfo(){
+  const el = document.getElementById('plano-atual-info');
+  if(!el) return;
+  const nomes = { starter:'Starter', growth:'Growth', business:'Business' };
+  if(tenantConfigCache.planoAtivo && tenantConfigCache.planoNome){
+    el.innerHTML = `<span style="color:var(--success);">${nomes[tenantConfigCache.planoNome] || tenantConfigCache.planoNome}</span> — assinatura ativa`;
+  } else {
+    el.innerHTML = `<span style="color:var(--warning);">Nenhum plano ativo</span> — você está no período de teste grátis`;
   }
-});
+}
 function atualizarBrandingSidebar(d){
   document.getElementById('admin-name').textContent = (d && d.nome) ? d.nome : 'Minha empresa';
   document.getElementById('admin-avatar').innerHTML = (d && d.logo) ? `<img src="${d.logo}">` : iniciais((d && d.nome) || 'Empresa');
