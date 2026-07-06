@@ -16,6 +16,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.3/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -720,6 +721,7 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 const storage = firebase.storage();
+const functions = firebase.app().functions('southamerica-east1');
 
 /* =========================================================
    PLANOS, TRIAL E STRIPE
@@ -855,6 +857,19 @@ function openModal(id){ document.getElementById(id).classList.add('open'); }
 function closeModal(id){ document.getElementById(id).classList.remove('open'); }
 document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', ()=>closeModal(b.dataset.close)));
 document.querySelectorAll('.modal-backdrop').forEach(m=>m.addEventListener('click', (e)=>{ if(e.target===m) closeModal(m.id); }));
+
+// Evita XSS: transforma texto livre (nome, observações, etc.) em algo seguro
+// pra inserir dentro de innerHTML — sem isso, alguém poderia digitar um
+// <script> ou <img onerror=...> num campo de texto e ele rodar na tela de quem for ver depois.
+function escapeHtml(str){
+  if(str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 function fmtData(ts){ if(!ts) return '—'; const d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleDateString('pt-BR'); }
 function fmtHora(ts){ if(!ts) return '—'; const d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
@@ -1227,13 +1242,13 @@ function renderEntregas(){
   list.forEach(e=>{
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><span style="font-family:var(--mono); font-size:12px;">${e.notaFiscal}</span></td>
-      <td>${e.clienteNome||'—'}</td>
-      <td>${e.motoristaNome||'—'}</td>
+      <td><span style="font-family:var(--mono); font-size:12px;">${escapeHtml(e.notaFiscal)}</span></td>
+      <td>${escapeHtml(e.clienteNome)||'—'}</td>
+      <td>${escapeHtml(e.motoristaNome)||'—'}</td>
       <td><span class="badge badge-${e.status}">${statusLabel(e.status)}</span></td>
       <td>${fmtData(e.dataFinalizacao||e.dataAgendada)}</td>
       <td>${e.dataFinalizacao ? fmtHora(e.dataFinalizacao) : '—'}</td>
-      <td>${e.recebedorNome||'—'}</td>
+      <td>${escapeHtml(e.recebedorNome)||'—'}</td>
       <td>${e.assinaturaUrl ? `<img class="thumb-sm" src="${e.assinaturaUrl}">` : '—'}</td>
       <td style="white-space:nowrap;">
         <button class="btn btn-ghost btn-sm" data-act="ver" data-id="${e.id}">Ver</button>
@@ -1409,23 +1424,25 @@ document.getElementById('btn-salvar-entrega').addEventListener('click', async ()
       return;
     }
 
-    const batch = db.batch();
     const empresaId = tenantConfigCache.empresaId || currentUser.uid;
-    notas.forEach(n=>{
-      const ref = db.collection('entregas').doc();
-      batch.set(ref, {
-        empresaId,
-        notaFiscal:n.nf, serie:n.serie||'1', clienteId, clienteNome:cliente?.nome, clienteEndereco:cliente?.endereco, clienteCidade:cliente?.cidade, clienteTelefone:cliente?.telefone,
-        motoristaId, motoristaNome:motorista?.nome, status, observacoes:obs||'',
-        dataAgendada: data ? firebase.firestore.Timestamp.fromDate(new Date(data)) : firebase.firestore.FieldValue.serverTimestamp(),
-        timeline: [{status, data: new Date()}]
-      });
+    const criarEntregasFn = functions.httpsCallable('criarEntregas');
+    await criarEntregasFn({
+      notas, clienteId, clienteNome: cliente?.nome, clienteEndereco: cliente?.endereco, clienteCidade: cliente?.cidade, clienteTelefone: cliente?.telefone,
+      motoristaId, motoristaNome: motorista?.nome, status, observacoes: obs || '',
+      dataAgendadaMs: data ? new Date(data).getTime() : null
     });
-    await batch.commit();
     addLog(`${notas.length} nota(s) fiscal(is) cadastrada(s) para ${motorista?.nome}.`);
     toast(`${notas.length} entrega(s) cadastrada(s)!`, 'ok');
     closeModal('modal-entrega');
-  }catch(e){ toast('Erro: '+e.message, 'err'); }
+  }catch(e){
+    if(e.code === 'functions/resource-exhausted'){
+      mostrarBannerUpgrade(e.message);
+    } else if(e.code && e.code.startsWith('functions/')){
+      toast(e.message, 'err');
+    } else {
+      toast('Erro: '+e.message, 'err');
+    }
+  }
   finally{ btn.disabled=false; btn.textContent='Salvar entrega'; }
 });
 
@@ -1451,33 +1468,45 @@ document.getElementById('input-planilha-entregas').addEventListener('change', as
     }
 
     let count=0;
-    const empresaId = tenantConfigCache.empresaId || currentUser.uid;
-    const batchImport = DEMO_MODE ? null : db.batch();
-    rows.forEach(row=>{
+    const criarEntregasFn = functions.httpsCallable('criarEntregas');
+    for(const row of rows){
       const nf = row.nf || row.NF || row.nota || row.Nota;
       const clienteNome = row.cliente || row.Cliente;
       const motoristaNome = row.motorista || row.Motorista;
-      if(!nf || !clienteNome) return;
+      if(!nf || !clienteNome) continue;
       const cliente = clientesCache.find(c=> c.nome.toLowerCase() === String(clienteNome).toLowerCase());
       const motorista = motoristasCache.find(m=> m.nome.toLowerCase() === String(motoristaNome||'').toLowerCase());
-      const novaEntrega = {
-        empresaId,
-        notaFiscal:String(nf), serie:'1', clienteId: cliente?.id||null, clienteNome: cliente?.nome||clienteNome,
-        motoristaId: motorista?.id||null, motoristaNome: motorista?.nome||motoristaNome||'—',
-        status:'aguardando', observacoes:'', timeline:[{status:'aguardando', data: DEMO_MODE ? fakeTs(new Date()) : new Date()}]
-      };
+
       if(DEMO_MODE){
-        novaEntrega.id='en'+(demoIdSeq++);
-        novaEntrega.dataAgendada = fakeTs(new Date());
+        const novaEntrega = {
+          empresaId: tenantConfigCache.empresaId || currentUser.uid, id:'en'+(demoIdSeq++),
+          notaFiscal:String(nf), serie:'1', clienteId: cliente?.id||null, clienteNome: cliente?.nome||clienteNome,
+          motoristaId: motorista?.id||null, motoristaNome: motorista?.nome||motoristaNome||'—',
+          status:'aguardando', observacoes:'', dataAgendada: fakeTs(new Date()), timeline:[{status:'aguardando', data: fakeTs(new Date())}]
+        };
         demoDB.entregas.unshift(novaEntrega);
-      }else{
-        novaEntrega.dataAgendada = firebase.firestore.FieldValue.serverTimestamp();
-        batchImport.set(db.collection('entregas').doc(), novaEntrega);
+        count++;
+        continue;
       }
-      count++;
-    });
+
+      if(!cliente?.id || !motorista?.id) continue; // a function exige cliente e motorista cadastrados
+      try{
+        await criarEntregasFn({
+          notas: [{ nf: String(nf), serie: '1' }],
+          clienteId: cliente.id, clienteNome: cliente.nome, clienteEndereco: cliente.endereco, clienteCidade: cliente.cidade, clienteTelefone: cliente.telefone,
+          motoristaId: motorista.id, motoristaNome: motorista.nome,
+          status: 'aguardando', observacoes: ''
+        });
+        count++;
+      }catch(errLinha){
+        if(errLinha.code === 'functions/resource-exhausted'){
+          mostrarBannerUpgrade(errLinha.message);
+          break; // limite do plano atingido no meio da importação — para por aqui
+        }
+        console.warn('Falha ao importar linha da planilha:', errLinha);
+      }
+    }
     if(DEMO_MODE) refreshDemoCaches();
-    else await batchImport.commit();
     toast(`${count} entrega(s) importada(s) com sucesso!`, 'ok');
   }catch(err){ toast('Erro ao ler planilha. Use colunas: nf, cliente, motorista.', 'err'); }
   e.target.value='';
@@ -1497,17 +1526,17 @@ function abrirDetalheEntrega(id){
       <button class="btn btn-primary btn-sm" id="btn-confirmar-reatribuicao">Reatribuir</button>
     </div>` : ''}
     <div class="detail-grid">
-      <div class="detail-item"><div class="l">Nota Fiscal</div><div class="v">${e.notaFiscal} / série ${e.serie}</div></div>
+      <div class="detail-item"><div class="l">Nota Fiscal</div><div class="v">${escapeHtml(e.notaFiscal)} / série ${escapeHtml(e.serie)}</div></div>
       <div class="detail-item"><div class="l">Status</div><div class="v"><span class="badge badge-${e.status}">${statusLabel(e.status)}</span></div></div>
-      <div class="detail-item"><div class="l">Cliente</div><div class="v">${e.clienteNome||'—'}</div></div>
-      <div class="detail-item"><div class="l">Motorista</div><div class="v">${e.motoristaNome||'—'}</div></div>
-      <div class="detail-item"><div class="l">Recebedor</div><div class="v">${e.recebedorNome||'—'} ${e.recebedorCargo?('· '+e.recebedorCargo):''}</div></div>
-      <div class="detail-item"><div class="l">Documento</div><div class="v">${e.recebedorDocumento||'—'}</div></div>
+      <div class="detail-item"><div class="l">Cliente</div><div class="v">${escapeHtml(e.clienteNome)||'—'}</div></div>
+      <div class="detail-item"><div class="l">Motorista</div><div class="v">${escapeHtml(e.motoristaNome)||'—'}</div></div>
+      <div class="detail-item"><div class="l">Recebedor</div><div class="v">${escapeHtml(e.recebedorNome)||'—'} ${e.recebedorCargo?('· '+escapeHtml(e.recebedorCargo)):''}</div></div>
+      <div class="detail-item"><div class="l">Documento</div><div class="v">${escapeHtml(e.recebedorDocumento)||'—'}</div></div>
       <div class="detail-item"><div class="l">Data/hora finalização</div><div class="v">${e.dataFinalizacao ? fmtDataHora(e.dataFinalizacao) : '—'}</div></div>
-      <div class="detail-item"><div class="l">Dispositivo</div><div class="v">${e.dispositivo||'—'}</div></div>
+      <div class="detail-item"><div class="l">Dispositivo</div><div class="v">${escapeHtml(e.dispositivo)||'—'}</div></div>
     </div>
-    ${e.observacoes ? `<div class="detail-item" style="margin-top:10px;"><div class="l">Observações</div><div class="v" style="font-weight:400;">${e.observacoes}</div></div>` : ''}
-    ${e.motivoNaoEntrega ? `<div class="detail-item" style="margin-top:10px; border:1px solid #F8C9C9; background:var(--danger-dim);"><div class="l" style="color:var(--danger);">Motivo da não entrega</div><div class="v">${e.motivoNaoEntrega}</div></div>` : ''}
+    ${e.observacoes ? `<div class="detail-item" style="margin-top:10px;"><div class="l">Observações</div><div class="v" style="font-weight:400;">${escapeHtml(e.observacoes)}</div></div>` : ''}
+    ${e.motivoNaoEntrega ? `<div class="detail-item" style="margin-top:10px; border:1px solid #F8C9C9; background:var(--danger-dim);"><div class="l" style="color:var(--danger);">Motivo da não entrega</div><div class="v">${escapeHtml(e.motivoNaoEntrega)}</div></div>` : ''}
     <div class="detail-photos">
       ${e.canhotoFotoUrl ? `<img src="${e.canhotoFotoUrl}">` : (e.status!=='nao_entregue' ? `<div class="detail-item" style="display:flex;align-items:center;justify-content:center;height:140px;color:var(--text-faint);">Sem foto do canhoto</div>` : '')}
       ${e.mercadoriaFotoUrl ? `<img src="${e.mercadoriaFotoUrl}">` : (e.status!=='nao_entregue' ? `<div class="detail-item" style="display:flex;align-items:center;justify-content:center;height:140px;color:var(--text-faint);">Sem foto da mercadoria</div>` : '')}
@@ -1627,7 +1656,7 @@ function renderDashboard(){
   const contMot = {};
   list.forEach(e=>{ if(e.status==='entregue'){ contMot[e.motoristaNome] = (contMot[e.motoristaNome]||0)+1; } });
   const rankMot = Object.entries(contMot).sort((a,b)=>b[1]-a[1]).slice(0,6);
-  document.getElementById('ranking-motoristas').innerHTML = rankMot.length ? rankMot.map((r,i)=>`<li><span class="rk"><span class="rank-badge">${i+1}</span>${r[0]}</span><b>${r[1]}</b></li>`).join('') : '<li style="color:var(--text-faint);">Sem dados no período</li>';
+  document.getElementById('ranking-motoristas').innerHTML = rankMot.length ? rankMot.map((r,i)=>`<li><span class="rk"><span class="rank-badge">${i+1}</span>${escapeHtml(r[0])}</span><b>${r[1]}</b></li>`).join('') : '<li style="color:var(--text-faint);">Sem dados no período</li>';
 
   // lista de entregas filtrada pelo card selecionado (dentro do período)
   let filtradas = list;
@@ -1639,7 +1668,7 @@ function renderDashboard(){
 
   document.getElementById('lista-entregas-titulo').textContent = tituloFiltro;
   document.getElementById('lista-entregas-count').textContent = filtradas.length;
-  document.getElementById('tbl-ultimas').innerHTML = filtradas.length ? filtradas.map(e=>`<tr><td style="font-family:var(--mono);font-size:12px;">${e.notaFiscal}</td><td>${e.clienteNome}</td><td>${e.motoristaNome}</td><td><span class="badge badge-${e.status}">${statusLabel(e.status)}</span></td><td>${fmtData(e.dataFinalizacao||e.dataAgendada)}</td></tr>`).join('') : `<tr><td colspan="5" style="text-align:center; color:var(--text-faint);">Sem entregas para este filtro no período</td></tr>`;
+  document.getElementById('tbl-ultimas').innerHTML = filtradas.length ? filtradas.map(e=>`<tr><td style="font-family:var(--mono);font-size:12px;">${escapeHtml(e.notaFiscal)}</td><td>${escapeHtml(e.clienteNome)}</td><td>${escapeHtml(e.motoristaNome)}</td><td><span class="badge badge-${e.status}">${statusLabel(e.status)}</span></td><td>${fmtData(e.dataFinalizacao||e.dataAgendada)}</td></tr>`).join('') : `<tr><td colspan="5" style="text-align:center; color:var(--text-faint);">Sem entregas para este filtro no período</td></tr>`;
 
   // Tempo médio "em rota" -> "entregue" por motorista (baseado na linha do tempo de cada entrega)
   const temposPorMotorista = {};
@@ -1661,7 +1690,7 @@ function renderDashboard(){
     .map(([nome,v])=>({ nome, horas: (v.total/v.count)/(1000*60*60), count:v.count }))
     .sort((a,b)=>a.horas-b.horas);
   document.getElementById('tempo-medio-motoristas').innerHTML = rankTempo.length
-    ? rankTempo.map(r=>`<li><span>${r.nome} <span style="color:var(--text-faint); font-size:11px;">(${r.count} entrega${r.count>1?'s':''})</span></span><b>${r.horas<24 ? r.horas.toFixed(1)+'h' : (r.horas/24).toFixed(1)+' dias'}</b></li>`).join('')
+    ? rankTempo.map(r=>`<li><span>${escapeHtml(r.nome)} <span style="color:var(--text-faint); font-size:11px;">(${r.count} entrega${r.count>1?'s':''})</span></span><b>${r.horas<24 ? r.horas.toFixed(1)+'h' : (r.horas/24).toFixed(1)+' dias'}</b></li>`).join('')
     : '<li style="color:var(--text-faint);">Sem dados suficientes ainda — precisa de entregas com status "Em rota" registrado antes de finalizar</li>';
 
   // Taxa de sucesso por cliente/região (cidade)
@@ -1676,7 +1705,7 @@ function renderDashboard(){
     .map(([nome,v])=>({ nome, cidade:v.cidade, taxa: v.total ? Math.round((v.sucesso/v.total)*100) : 0, total:v.total }))
     .sort((a,b)=>a.taxa-b.taxa);
   document.getElementById('tbl-taxa-sucesso').innerHTML = taxasCliente.length
-    ? taxasCliente.map(t=>`<tr><td>${t.nome}</td><td>${t.cidade}</td><td><span class="badge ${t.taxa>=80?'badge-entregue':t.taxa>=50?'badge-em_rota':'badge-nao_entregue'}">${t.taxa}%</span></td><td>${t.total}</td></tr>`).join('')
+    ? taxasCliente.map(t=>`<tr><td>${escapeHtml(t.nome)}</td><td>${escapeHtml(t.cidade)}</td><td><span class="badge ${t.taxa>=80?'badge-entregue':t.taxa>=50?'badge-em_rota':'badge-nao_entregue'}">${t.taxa}%</span></td><td>${t.total}</td></tr>`).join('')
     : `<tr><td colspan="4" style="text-align:center; color:var(--text-faint);">Sem entregas no período</td></tr>`;
 
   dashboardListaAtual = list;
@@ -1692,7 +1721,7 @@ function renderMotoristas(){
   tbody.innerHTML=''; empty.classList.toggle('hidden', list.length>0);
   list.forEach(m=>{
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${m.nome}</td><td>${m.cpf||'—'}</td><td>${m.telefone||'—'}</td><td>${m.modelo||'—'}</td><td>${m.placa||'—'}</td><td><span class="badge badge-${m.status}">${m.status==='ativo'?'Ativo':'Inativo'}</span></td>
+    tr.innerHTML = `<td>${escapeHtml(m.nome)}</td><td>${escapeHtml(m.cpf)||'—'}</td><td>${escapeHtml(m.telefone)||'—'}</td><td>${escapeHtml(m.modelo)||'—'}</td><td>${escapeHtml(m.placa)||'—'}</td><td><span class="badge badge-${m.status}">${m.status==='ativo'?'Ativo':'Inativo'}</span></td>
       <td style="white-space:nowrap;"><button class="btn btn-ghost btn-sm" data-act="edit" data-id="${m.id}"><i class="fa-solid fa-pen"></i></button> <button class="btn btn-ghost btn-sm" data-act="del" data-id="${m.id}"><i class="fa-solid fa-trash"></i></button></td>`;
     tr.querySelectorAll('button').forEach(b=>{
       b.addEventListener('click', async ()=>{
@@ -1798,21 +1827,22 @@ document.getElementById('btn-salvar-motorista').addEventListener('click', async 
       }
     }
 
-    const secAuth = getSecondaryAuth();
-    const cred = await secAuth.createUserWithEmailAndPassword(email, senha);
-    const uid = cred.user.uid;
-    await secAuth.signOut();
-
-    // usamos o mesmo UID do login como ID dos documentos, para as entregas baterem certinho com o motorista
-    await Promise.all([
-      db.collection('usuarios').doc(uid).set({ nome, email, role:'motorista', telefone: telefone||null, empresaId }),
-      db.collection('motoristas').doc(uid).set(payload)
-    ]);
+    // A criação de verdade acontece na Cloud Function "criarMotorista" — ela confere
+    // o limite do plano no servidor (não dá pra burlar isso pelo navegador) e já cria
+    // o login e os documentos com o mesmo UID.
+    const criarMotoristaFn = functions.httpsCallable('criarMotorista');
+    await criarMotoristaFn({ nome, cpf, rg, telefone, email, placa, modelo, status, senha });
 
     toast('Motorista cadastrado! Ele já pode logar com o e-mail e senha definidos.', 'ok');
     closeModal('modal-motorista');
   }catch(e){
-    toast(traduzErroAuth(e), 'err');
+    if(e.code === 'functions/resource-exhausted'){
+      mostrarBannerUpgrade(e.message);
+    } else if(e.code && e.code.startsWith('functions/')){
+      toast(e.message, 'err');
+    } else {
+      toast(traduzErroAuth(e), 'err');
+    }
   }finally{
     btn.disabled=false; btn.textContent='Salvar motorista';
   }
@@ -1827,7 +1857,7 @@ function renderClientes(){
   tbody.innerHTML=''; empty.classList.toggle('hidden', list.length>0);
   list.forEach(c=>{
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${c.nome}</td><td>${c.cnpj||'—'}</td><td>${c.cidade||'—'}${c.estado?('/'+c.estado):''}</td><td>${c.responsavel||'—'}</td><td>${c.telefone||'—'}</td>
+    tr.innerHTML = `<td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.cnpj)||'—'}</td><td>${escapeHtml(c.cidade)||'—'}${c.estado?('/'+escapeHtml(c.estado)):''}</td><td>${escapeHtml(c.responsavel)||'—'}</td><td>${escapeHtml(c.telefone)||'—'}</td>
       <td style="white-space:nowrap;"><button class="btn btn-ghost btn-sm" data-act="edit" data-id="${c.id}"><i class="fa-solid fa-pen"></i></button> <button class="btn btn-ghost btn-sm" data-act="del" data-id="${c.id}"><i class="fa-solid fa-trash"></i></button></td>`;
     tr.querySelectorAll('button').forEach(b=>{
       b.addEventListener('click', async ()=>{

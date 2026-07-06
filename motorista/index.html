@@ -760,6 +760,16 @@ function closeModal(id){ document.getElementById(id).classList.remove('open'); }
 document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', ()=>closeModal(b.dataset.close)));
 document.querySelectorAll('.modal-backdrop').forEach(m=>m.addEventListener('click', (e)=>{ if(e.target===m) closeModal(m.id); }));
 
+function escapeHtml(str){
+  if(str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function fmtData(ts){ if(!ts) return '—'; const d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleDateString('pt-BR'); }
 function fmtHora(ts){ if(!ts) return '—'; const d = ts.toDate ? ts.toDate() : new Date(ts); return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
 function fmtDataHora(ts){ if(!ts) return '—'; return fmtData(ts) + ' às ' + fmtHora(ts); }
@@ -1520,10 +1530,10 @@ function renderMobileHome(){
     card.className='delivery-card';
     card.innerHTML = `
       <div class="top-row">
-        <div><div class="cli">${e.clienteNome}</div><div class="nf">NF ${e.notaFiscal} / ${e.serie}</div></div>
+        <div><div class="cli">${escapeHtml(e.clienteNome)}</div><div class="nf">NF ${escapeHtml(e.notaFiscal)} / ${escapeHtml(e.serie)}</div></div>
         <span class="badge badge-${e.status}">${statusLabel(e.status)}</span>
       </div>
-      <div class="addr"><i class="fa-solid fa-location-dot"></i><span>${e.clienteEndereco||'—'}, ${e.clienteCidade||''}</span></div>
+      <div class="addr"><i class="fa-solid fa-location-dot"></i><span>${escapeHtml(e.clienteEndereco)||'—'}, ${escapeHtml(e.clienteCidade)||''}</span></div>
       ${e.geo ? `<a href="https://www.google.com/maps?q=${e.geo.lat},${e.geo.lng}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="margin-top:10px; width:100%;" onclick="event.stopPropagation();"><i class="fa-solid fa-map-location-dot"></i> Ver localização do registro</a>` : ''}
     `;
     card.addEventListener('click', ()=>abrirDetalheMobile(e.id));
@@ -1534,11 +1544,11 @@ function abrirDetalheMobile(id){
   const e = entregasCache.find(x=>x.id===id); if(!e) return;
   entregaAtivaId = id;
   document.getElementById('detalhe-info-card').innerHTML = `
-    <div class="info-row"><i class="fa-solid fa-building"></i><div><span class="l">Cliente</span>${e.clienteNome}</div></div>
-    <div class="info-row"><i class="fa-solid fa-file-invoice"></i><div><span class="l">Nota Fiscal</span>${e.notaFiscal} / série ${e.serie}</div></div>
-    <div class="info-row"><i class="fa-solid fa-location-dot"></i><div><span class="l">Endereço</span>${e.clienteEndereco||'—'}, ${e.clienteCidade||''}</div></div>
-    <div class="info-row"><i class="fa-solid fa-phone"></i><div><span class="l">Telefone</span>${e.clienteTelefone||'—'}</div></div>
-    <div class="info-row"><i class="fa-solid fa-note-sticky"></i><div><span class="l">Observações</span>${e.observacoes||'Nenhuma'}</div></div>
+    <div class="info-row"><i class="fa-solid fa-building"></i><div><span class="l">Cliente</span>${escapeHtml(e.clienteNome)}</div></div>
+    <div class="info-row"><i class="fa-solid fa-file-invoice"></i><div><span class="l">Nota Fiscal</span>${escapeHtml(e.notaFiscal)} / série ${escapeHtml(e.serie)}</div></div>
+    <div class="info-row"><i class="fa-solid fa-location-dot"></i><div><span class="l">Endereço</span>${escapeHtml(e.clienteEndereco)||'—'}, ${escapeHtml(e.clienteCidade)||''}</div></div>
+    <div class="info-row"><i class="fa-solid fa-phone"></i><div><span class="l">Telefone</span>${escapeHtml(e.clienteTelefone)||'—'}</div></div>
+    <div class="info-row"><i class="fa-solid fa-note-sticky"></i><div><span class="l">Observações</span>${escapeHtml(e.observacoes)||'Nenhuma'}</div></div>
     ${e.geo ? `<div class="info-row"><i class="fa-solid fa-map-location-dot"></i><div><span class="l">Localização registrada</span><a href="https://www.google.com/maps?q=${e.geo.lat},${e.geo.lng}" target="_blank" rel="noopener" style="color:var(--primary); font-weight:600;">Ver no mapa</a></div></div>` : ''}
   `;
   const podeIniciar = e.status==='aguardando' || e.status==='em_rota';
